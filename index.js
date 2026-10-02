@@ -308,8 +308,15 @@ client.on("interactionCreate", async interaction => {
         if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
         const sub=interaction.options.getSubcommand();
         if (sub === "setup") { const ch=interaction.options.getChannel("channel",true); config[interaction.guild.id] ??= {}; config[interaction.guild.id].roblox={channelId:ch.id,enabled:true}; saveConfig(config); return interaction.reply({content:"✅ ตั้งแจ้งเตือน Roblox ที่ " + ch,ephemeral:true}); }
-        const id=config[interaction.guild.id]?.roblox?.channelId, ch=id ? interaction.guild.channels.cache.get(id) : null;
-        if (!ch) return interaction.reply({content:"❌ ใช้ /roblox setup ก่อน",ephemeral:true}); await ch.send({embeds:[new EmbedBuilder().setColor(0x5865F2).setTitle("🤖 Roblox Update System").setDescription("ระบบแจ้งเตือน Roblox พร้อมทำงานแล้ว").setFooter({text:"Source: Roblox Developer Forum"})]}); return interaction.reply({content:"✅ ทดสอบสำเร็จ",ephemeral:true});
+        if (!config[interaction.guild.id]?.roblox?.channelId) return interaction.reply({content:"❌ ใช้ /roblox setup ก่อน",ephemeral:true});
+        await interaction.deferReply({ephemeral:true});
+        try {
+            await sendTestUpdate(client, config, interaction.guild.id);
+            return interaction.editReply("✅ ส่งข้อความทดสอบ Roblox Update ไปยังห้องที่ตั้งค่าไว้แล้ว");
+        } catch (error) {
+            console.log("[ROBLOX TEST ERROR]", error.message);
+            return interaction.editReply("❌ ทดสอบไม่สำเร็จ: " + error.message);
+        }
     }
 
     if (interaction.commandName === "stats") {
@@ -367,6 +374,7 @@ process.on("uncaughtException", error => {
 });
 
 const { startDashboard } = require("./web/dashboard");
+const { sendTestUpdate } = require("./systems/robloxUpdates");
 startDashboard({ client, config, saveConfig, formatUptime });
 
 client.login(process.env.BOT_TOKEN);
