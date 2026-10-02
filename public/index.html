@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kraken Control Panel</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="bg"></div>
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-mark">K</span><span><b>Kraken</b><small>Control Panel</small></span></a>
+  <div id="account"></div>
+</header>
+<main>
+  <section id="landing" class="hero">
+    <div class="badge">🦑 KRAKEN COMMUNITY</div>
+    <h1>จัดการบอทของคุณ<br><span>ง่ายในที่เดียว</span></h1>
+    <p>ตั้งสถานะ • Ticket • Roblox Updates • ตรวจสอบ Voice<br>ผ่าน Control Panel ดีไซน์เข้ม สะอาด และใช้งานง่าย</p>
+    <a class="btn primary" href="/login">เข้าสู่ระบบด้วย Discord</a>
+    <div id="setupHint" class="notice hidden">ตั้งค่า Discord OAuth บน Render ก่อนใช้งาน Dashboard</div>
+  </section>
+
+  <section id="panel" class="hidden">
+    <div class="section-head">
+      <div><div class="eyebrow">CONTROL PANEL</div><h2>สวัสดี, <span id="userName">ผู้ดูแล</span> 👋</h2></div>
+      <button class="btn ghost" onclick="logout()">ออกจากระบบ</button>
+    </div>
+    <div class="grid">
+      <aside class="card servers"><h3>เซิร์ฟเวอร์ของคุณ</h3><div id="servers"></div></aside>
+      <section class="content">
+        <div id="empty" class="card empty">เลือกเซิร์ฟเวอร์ทางซ้ายเพื่อเริ่มจัดการ</div>
+        <div id="serverView" class="hidden">
+          <div class="server-title card">
+            <div><div class="eyebrow">SERVER</div><h2 id="serverName">-</h2><p id="serverId">-</p></div>
+            <span id="botState" class="pill">กำลังโหลด...</span>
+          </div>
+          <div class="cards">
+            <div class="card stat"><span>🎧 Voice</span><b id="voiceState">-</b></div>
+            <div class="card stat"><span>⏱️ Uptime</span><b id="uptime">-</b></div>
+            <div class="card stat"><span>📡 Ping</span><b id="ping">-</b></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div><h3>🎮 สถานะบอท</h3><p>กำหนดข้อความที่แสดงใต้ชื่อบอท</p></div></div>
+            <div class="form-grid">
+              <label>ประเภท<select id="statusType"><option>Playing</option><option>Watching</option><option>Listening</option><option>Competing</option></select></label>
+              <label>ข้อความ<input id="statusText" placeholder="Kraken Community"></label>
+            </div>
+            <div class="actions"><button class="btn primary" onclick="saveStatus()">บันทึกสถานะ</button><button class="btn ghost" onclick="clearStatus()">ล้างสถานะ</button></div>
+          </div>
+
+          <div class="two">
+            <div class="card">
+              <div class="card-head"><div><h3>🤖 Roblox Updates</h3><p>แจ้งประกาศใหม่จาก Roblox Developer Forum</p></div></div>
+              <label>ห้องแจ้งเตือน<input id="robloxChannel" placeholder="Channel ID"></label>
+              <div class="actions"><button class="btn primary" onclick="saveRoblox()">บันทึก</button><button class="btn ghost" onclick="testRoblox()">ทดสอบ</button></div>
+            </div>
+            <div class="card">
+              <div class="card-head"><div><h3>🎫 Ticket</h3><p>ตั้งค่าระบบช่วยเหลือในเซิร์ฟเวอร์</p></div></div>
+              <label>ห้อง Panel<input id="ticketPanel" placeholder="Channel ID"></label>
+              <label>หมวดหมู่<input id="ticketCategory" placeholder="Category ID (ไม่บังคับ)"></label>
+              <label>ยศทีมงาน<input id="ticketStaff" placeholder="Role ID (ไม่บังคับ)"></label>
+              <div class="actions"><button class="btn primary" onclick="saveTicket()">บันทึกและส่ง Panel</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>
