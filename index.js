@@ -413,7 +413,7 @@ process.on("uncaughtException", error => {
 });
 
 const { startDashboard } = require("./web/dashboard");
-const { sendTestUpdate } = require("./systems/robloxUpdates");
+const { startRobloxUpdates, sendTestUpdate } = require("./systems/robloxUpdates");
 startDashboard({ client, config, saveConfig, formatUptime });
 
 client.login(process.env.BOT_TOKEN);
