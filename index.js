@@ -6,8 +6,15 @@ const {
     EmbedBuilder,
     REST,
     Routes,
-    SlashCommandBuilder
+    SlashCommandBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    PermissionsBitField
 } = require("discord.js");
+
+const fs = require("fs");
+const path = require("path");
 
 const {
     joinVoiceChannel,
@@ -359,20 +366,7 @@ process.on("uncaughtException", error => {
     console.log("[UNCAUGHT EXCEPTION]", error);
 });
 
-const express = require("express");
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.get("/", (req, res) => {
-    res.json({
-        bot: "KrakenVoiceBot",
-        status: client.isReady() ? "online" : "starting",
-        uptime: formatUptime(Date.now() - startedAt)
-    });
-});
-
-app.listen(PORT, () => {
-    console.log(`[WEB] Server listening on port ${PORT}`);
-});
+const { startDashboard } = require("./web/dashboard");
+startDashboard({ client, config, saveConfig, formatUptime });
 
 client.login(process.env.BOT_TOKEN);
