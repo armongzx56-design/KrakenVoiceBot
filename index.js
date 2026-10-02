@@ -67,6 +67,9 @@ const commands = [
             .addRoleOption(o => o.setName("staff").setDescription("ยศทีมงาน")))
         .addSubcommand(s => s.setName("panel").setDescription("ส่ง Panel ใหม่")),
     new SlashCommandBuilder()
+        .setName("247").setDescription("ให้บอทอยู่ในห้องเสียง 24/7")
+        .addChannelOption(o => o.setName("channel").setDescription("เลือกห้องเสียงที่ให้บอทเข้า").addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice).setRequired(true)),
+    new SlashCommandBuilder()
         .setName("roblox").setDescription("ระบบแจ้งเตือน Roblox")
         .addSubcommand(s => s.setName("setup").setDescription("ตั้งห้องแจ้งเตือน")
             .addChannelOption(o => o.setName("channel").setDescription("ห้องข่าว").addChannelTypes(ChannelType.GuildText).setRequired(true)))
@@ -114,9 +117,8 @@ async function connectToVoice() {
         console.log("[VOICE] Fetching server...");
 
         const guild = await client.guilds.fetch(process.env.GUILD_ID);
-        const channel = await guild.channels.fetch(
-            process.env.VOICE_CHANNEL_ID
-        );
+        const configuredChannelId = config[guild.id]?.voice247?.channelId || process.env.VOICE_CHANNEL_ID;
+        const channel = await guild.channels.fetch(configuredChannelId);
 
         if (!channel) {
             console.log("[VOICE ERROR] Voice channel not found");
@@ -304,6 +306,43 @@ client.on("interactionCreate", async interaction => {
         const id=config[interaction.guild.id]?.ticket?.panelChannelId, ch=id ? interaction.guild.channels.cache.get(id) : null;
         if (!ch) return interaction.reply({content:"❌ ใช้ /ticket setup ก่อน",ephemeral:true}); await sendTicketPanel(ch); return interaction.reply({content:"✅ ส่ง Panel ใหม่แล้ว",ephemeral:true});
     }
+    if (interaction.commandName === "247") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+            return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
+        }
+        const channel = interaction.options.getChannel("channel", true);
+        if (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice) {
+            return interaction.reply({content:"❌ กรุณาเลือกห้องเสียงเท่านั้น",ephemeral:true});
+        }
+
+        config[interaction.guild.id] ??= {};
+        config[interaction.guild.id].voice247 = {
+            enabled: true,
+            channelId: channel.id,
+            channelName: channel.name
+        };
+        saveConfig(config);
+
+        process.env.GUILD_ID = interaction.guild.id;
+        process.env.VOICE_CHANNEL_ID = channel.id;
+
+        if (connection) {
+            try { connection.destroy(); } catch {}
+            connection = null;
+        }
+        reconnecting = false;
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+
+        await connectToVoice();
+        return interaction.reply({
+            content:"✅ ตั้งโหมด 24/7 แล้ว\n🎧 ห้อง: " + channel + "\n\nบอทจะพยายามกลับเข้าห้องนี้อัตโนมัติเมื่อหลุด",
+            ephemeral:true
+        });
+    }
+
     if (interaction.commandName === "roblox") {
         if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
         const sub=interaction.options.getSubcommand();
