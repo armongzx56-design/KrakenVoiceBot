@@ -56,8 +56,8 @@ function formatUptime(ms) {
 }
 
 async function registerCommands() {
-    if (!process.env.CLIENT_ID || !process.env.GUILD_ID) {
-        console.log("[COMMANDS] Missing CLIENT_ID or GUILD_ID");
+    if (!process.env.GUILD_ID || !client.user) {
+        console.log("[COMMANDS] Missing GUILD_ID or bot user");
         return;
     }
 
@@ -65,7 +65,7 @@ async function registerCommands() {
 
     await rest.put(
         Routes.applicationGuildCommands(
-            process.env.CLIENT_ID,
+            client.user.id,
             process.env.GUILD_ID
         ),
         { body: commands }
