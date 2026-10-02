@@ -14,6 +14,18 @@ function makeEmbed(topic) {
         .addFields({name:"📅 วันที่",value:new Date(topic.created_at).toLocaleString("th-TH"),inline:true},{name:"💬 Replies",value:String(topic.reply_count ?? 0),inline:true})
         .setFooter({text:"Roblox Developer Forum • Kraken Community"}).setTimestamp(new Date(topic.created_at));
 }
+async function sendTestUpdate(client, config, guildId) {
+    const rb = config[guildId]?.roblox;
+    if (!rb?.enabled || !rb.channelId) throw new Error("ยังไม่ได้ตั้งห้อง Roblox Update");
+    const guild = client.guilds.cache.get(guildId);
+    const channel = guild?.channels.cache.get(rb.channelId);
+    if (!channel?.isTextBased()) throw new Error("ไม่พบห้องแจ้งเตือน Roblox หรือบอทไม่มีสิทธิ์เข้าถึงห้อง");
+    const topic = await fetchLatest();
+    if (!topic) throw new Error("ไม่พบประกาศ Roblox ล่าสุด");
+    await channel.send({ embeds: [makeEmbed(topic).setDescription("🧪 นี่คือข้อความทดสอบระบบ Roblox Update\n\n" + (makeEmbed(topic).data.description || ""))] });
+    return topic;
+}
+
 async function check(client, config, saveConfig) {
     let topic; try { topic = await fetchLatest(); } catch (e) { console.log("[ROBLOX ERROR]", e.message); return; }
     if (!topic) return;
@@ -32,4 +44,4 @@ function startRobloxUpdates(client, config, saveConfig) {
     setTimeout(() => check(client,config,saveConfig),10000);
     setInterval(() => check(client,config,saveConfig),POLL_MS);
 }
-module.exports={startRobloxUpdates};
+module.exports={startRobloxUpdates,sendTestUpdate};
