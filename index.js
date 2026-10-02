@@ -27,6 +27,13 @@ const startedAt = Date.now();
 let connection = null;
 let reconnectTimer = null;
 let reconnecting = false;
+const DATA_DIR = path.join(__dirname, "data");
+const CONFIG_FILE = path.join(DATA_DIR, "config.json");
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(CONFIG_FILE)) fs.writeFileSync(CONFIG_FILE, "{}");
+function loadConfig() { try { return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")); } catch { return {}; } }
+function saveConfig(c) { fs.writeFileSync(CONFIG_FILE, JSON.stringify(c, null, 2)); }
+const config = loadConfig();
 
 const commands = [
     new SlashCommandBuilder()
@@ -37,7 +44,26 @@ const commands = [
         .setDescription("เช็กความเร็วตอบสนองของบอท"),
     new SlashCommandBuilder()
         .setName("stats")
-        .setDescription("ดูสถานะและสถิติของบอท")
+        .setDescription("ดูสถานะและสถิติของบอท"),
+    new SlashCommandBuilder()
+        .setName("status").setDescription("ตั้งสถานะบอท")
+        .addSubcommand(s => s.setName("set").setDescription("ตั้งสถานะ")
+            .addStringOption(o => o.setName("type").setDescription("ประเภท").setRequired(true)
+                .addChoices({name:"Playing",value:"Playing"},{name:"Watching",value:"Watching"},{name:"Listening",value:"Listening"},{name:"Competing",value:"Competing"}))
+            .addStringOption(o => o.setName("text").setDescription("ข้อความ").setRequired(true)))
+        .addSubcommand(s => s.setName("clear").setDescription("ล้างสถานะ")),
+    new SlashCommandBuilder()
+        .setName("ticket").setDescription("ระบบ Ticket")
+        .addSubcommand(s => s.setName("setup").setDescription("ตั้ง Ticket Panel")
+            .addChannelOption(o => o.setName("channel").setDescription("ห้อง Panel").addChannelTypes(ChannelType.GuildText).setRequired(true))
+            .addChannelOption(o => o.setName("category").setDescription("หมวดหมู่ Ticket").addChannelTypes(ChannelType.GuildCategory))
+            .addRoleOption(o => o.setName("staff").setDescription("ยศทีมงาน")))
+        .addSubcommand(s => s.setName("panel").setDescription("ส่ง Panel ใหม่")),
+    new SlashCommandBuilder()
+        .setName("roblox").setDescription("ระบบแจ้งเตือน Roblox")
+        .addSubcommand(s => s.setName("setup").setDescription("ตั้งห้องแจ้งเตือน")
+            .addChannelOption(o => o.setName("channel").setDescription("ห้องข่าว").addChannelTypes(ChannelType.GuildText).setRequired(true)))
+        .addSubcommand(s => s.setName("test").setDescription("ทดสอบระบบ"))
 ].map(command => command.toJSON());
 
 function formatUptime(ms) {
@@ -170,9 +196,55 @@ client.once("clientReady", async () => {
 
     await registerCommands();
     await connectToVoice();
+    startRobloxUpdates(client, config, saveConfig);
 });
 
+async function sendTicketPanel(channel) {
+    const embed = new EmbedBuilder().setColor(0x5865F2).setTitle("🎫 Kraken Support")
+        .setDescription("กดปุ่มด้านล่างเพื่อเปิด Ticket ส่วนตัวกับทีมงาน")
+        .addFields(
+            {name:"🛠️ Support",value:"สอบถามหรือขอความช่วยเหลือ",inline:true},
+            {name:"🐛 Bug Report",value:"แจ้งบั๊กหรือปัญหา",inline:true},
+            {name:"💡 Suggestion",value:"เสนอแนะระบบ",inline:true}
+        ).setFooter({text:"Kraken Community • Support"});
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("ticket_open").setLabel("เปิด Ticket").setEmoji("🎫").setStyle(ButtonStyle.Primary)
+    );
+    await channel.send({embeds:[embed],components:[row]});
+}
+async function createTicket(interaction) {
+    const guild = interaction.guild;
+    const existing = guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.topic === "kraken-ticket:" + interaction.user.id);
+    if (existing) return interaction.reply({content:"🎫 มึงมี Ticket เปิดอยู่แล้ว: " + existing,ephemeral:true});
+    const tc = (config[guild.id] || {}).ticket || {};
+    const category = tc.categoryId ? guild.channels.cache.get(tc.categoryId) : null;
+    const staff = tc.staffRoleId ? guild.roles.cache.get(tc.staffRoleId) : null;
+    const overwrites = [
+        {id:guild.roles.everyone.id,deny:[PermissionsBitField.Flags.ViewChannel]},
+        {id:interaction.user.id,allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages,PermissionsBitField.Flags.ReadMessageHistory]},
+        {id:client.user.id,allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages,PermissionsBitField.Flags.ManageChannels,PermissionsBitField.Flags.ReadMessageHistory]}
+    ];
+    if (staff) overwrites.push({id:staff.id,allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages,PermissionsBitField.Flags.ReadMessageHistory]});
+    const channel = await guild.channels.create({
+        name:"ticket-" + interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,20) || "ticket-user",
+        type:ChannelType.GuildText,parent:category ? category.id : undefined,
+        topic:"kraken-ticket:" + interaction.user.id,permissionOverwrites:overwrites
+    });
+    const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("ticket_close").setLabel("ปิด Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger));
+    await channel.send({content:"👋 <@" + interaction.user.id + ">" + (staff ? " <@&" + staff.id + ">" : ""),
+        embeds:[new EmbedBuilder().setColor(0x57F287).setTitle("🎫 Ticket เปิดแล้ว").setDescription("อธิบายปัญหาหรือสิ่งที่ต้องการได้เลย")],
+        components:[row]});
+    await interaction.reply({content:"✅ เปิด Ticket ให้แล้ว: " + channel,ephemeral:true});
+}
 client.on("interactionCreate", async interaction => {
+    if (interaction.isButton()) {
+        if (interaction.customId === "ticket_open") return createTicket(interaction);
+        if (interaction.customId === "ticket_close") {
+            await interaction.reply({content:"🔒 กำลังปิด Ticket...",ephemeral:true});
+            return setTimeout(() => interaction.channel && interaction.channel.delete().catch(()=>{}),1500);
+        }
+        return;
+    }
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === "ping") {
@@ -203,6 +275,34 @@ client.on("interactionCreate", async interaction => {
 
         await interaction.reply({ embeds: [embed] });
         return;
+    }
+
+    if (interaction.commandName === "status") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
+        const sub = interaction.options.getSubcommand();
+        if (sub === "clear") { client.user.setActivity(null); return interaction.reply({content:"✅ ล้างสถานะแล้ว",ephemeral:true}); }
+        const type = interaction.options.getString("type",true); const text = interaction.options.getString("text",true);
+        const map = {Playing:ActivityType.Playing,Watching:ActivityType.Watching,Listening:ActivityType.Listening,Competing:ActivityType.Competing};
+        client.user.setActivity(text,{type:map[type]}); config[interaction.guild.id] ??= {}; config[interaction.guild.id].status={type,text}; saveConfig(config);
+        return interaction.reply({content:"✅ ตั้งสถานะ " + type + " " + text + " แล้ว",ephemeral:true});
+    }
+    if (interaction.commandName === "ticket") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
+        const sub=interaction.options.getSubcommand();
+        if (sub === "setup") {
+            const ch=interaction.options.getChannel("channel",true), cat=interaction.options.getChannel("category"), role=interaction.options.getRole("staff");
+            config[interaction.guild.id] ??= {}; config[interaction.guild.id].ticket={panelChannelId:ch.id,categoryId:cat?.id || null,staffRoleId:role?.id || null}; saveConfig(config); await sendTicketPanel(ch);
+            return interaction.reply({content:"✅ ตั้ง Ticket สำเร็จที่ " + ch,ephemeral:true});
+        }
+        const id=config[interaction.guild.id]?.ticket?.panelChannelId, ch=id ? interaction.guild.channels.cache.get(id) : null;
+        if (!ch) return interaction.reply({content:"❌ ใช้ /ticket setup ก่อน",ephemeral:true}); await sendTicketPanel(ch); return interaction.reply({content:"✅ ส่ง Panel ใหม่แล้ว",ephemeral:true});
+    }
+    if (interaction.commandName === "roblox") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
+        const sub=interaction.options.getSubcommand();
+        if (sub === "setup") { const ch=interaction.options.getChannel("channel",true); config[interaction.guild.id] ??= {}; config[interaction.guild.id].roblox={channelId:ch.id,enabled:true}; saveConfig(config); return interaction.reply({content:"✅ ตั้งแจ้งเตือน Roblox ที่ " + ch,ephemeral:true}); }
+        const id=config[interaction.guild.id]?.roblox?.channelId, ch=id ? interaction.guild.channels.cache.get(id) : null;
+        if (!ch) return interaction.reply({content:"❌ ใช้ /roblox setup ก่อน",ephemeral:true}); await ch.send({embeds:[new EmbedBuilder().setColor(0x5865F2).setTitle("🤖 Roblox Update System").setDescription("ระบบแจ้งเตือน Roblox พร้อมทำงานแล้ว").setFooter({text:"Source: Roblox Developer Forum"})]}); return interaction.reply({content:"✅ ทดสอบสำเร็จ",ephemeral:true});
     }
 
     if (interaction.commandName === "stats") {
