@@ -26,7 +26,8 @@ require("dotenv").config();
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildVoiceStates
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMembers
     ]
 });
 
@@ -79,9 +80,11 @@ const commands = [
 function updateMemberActivity(guild) {
     if (!guild || !client.user) return;
 
-    client.user.setActivity(`${guild.memberCount} Members`, {
+    const memberCount = guild.memberCount;
+    client.user.setActivity(`${memberCount} Members`, {
         type: ActivityType.Watching
     });
+    console.log(`[MEMBERS] ${guild.name}: ${memberCount} Members`);
 }
 
 function formatUptime(ms) {
@@ -409,13 +412,15 @@ client.on("interactionCreate", async interaction => {
 });
 
 client.on("guildMemberAdd", member => {
-    if (member.guild.id === process.env.GUILD_ID) {
+    const targetGuildId = process.env.GUILD_ID;
+    if (!targetGuildId || member.guild.id === targetGuildId) {
         updateMemberActivity(member.guild);
     }
 });
 
 client.on("guildMemberRemove", member => {
-    if (member.guild.id === process.env.GUILD_ID) {
+    const targetGuildId = process.env.GUILD_ID;
+    if (!targetGuildId || member.guild.id === targetGuildId) {
         updateMemberActivity(member.guild);
     }
 });
