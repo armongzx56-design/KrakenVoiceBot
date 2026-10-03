@@ -51,6 +51,11 @@ const commands = [
         .setName("ping")
         .setDescription("เช็กความเร็วตอบสนองของบอท"),
     new SlashCommandBuilder()
+        .setName("announce").setDescription("ส่งประกาศไปยังห้องที่เลือก")
+        .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งประกาศ").addChannelTypes(ChannelType.GuildText).setRequired(true))
+        .addStringOption(o => o.setName("message").setDescription("ข้อความประกาศ").setRequired(true))
+        .addStringOption(o => o.setName("title").setDescription("หัวข้อประกาศ").setRequired(false)),
+    new SlashCommandBuilder()
         .setName("stats")
         .setDescription("ดูสถานะและสถิติของบอท"),
     new SlashCommandBuilder()
@@ -288,7 +293,7 @@ client.on("interactionCreate", async interaction => {
                 },
                 {
                     name: "⚡ Commands",
-                    value: "`/help` — ดูคำสั่ง\n`/ping` — เช็ก latency\n`/stats` — ดูสถานะบอท"
+                    value: "`/help` — ดูคำสั่ง\n`/ping` — เช็ก latency\n`/announce` — ส่งประกาศ\n`/stats` — ดูสถานะบอท"
                 }
             )
             .setFooter({ text: "KrakenVoiceBot" });
@@ -366,6 +371,24 @@ client.on("interactionCreate", async interaction => {
         } catch (error) {
             console.log("[ROBLOX TEST ERROR]", error.message);
             return interaction.editReply("❌ ทดสอบไม่สำเร็จ: " + error.message);
+        }
+    }
+
+    if (interaction.commandName === "announce") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+            return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
+        }
+        const channel = interaction.options.getChannel("channel", true);
+        const message = interaction.options.getString("message", true);
+        const title = interaction.options.getString("title") || "📢 ประกาศ";
+        const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(title).setDescription(message)
+            .setFooter({text:"Kraken Community • Announcement"}).setTimestamp();
+        try {
+            await channel.send({embeds:[embed]});
+            return interaction.reply({content:"✅ ส่งประกาศไปที่ " + channel + " เรียบร้อยแล้ว",ephemeral:true});
+        } catch (error) {
+            console.log("[ANNOUNCE ERROR]", error.message);
+            return interaction.reply({content:"❌ ส่งประกาศไม่สำเร็จ: " + error.message,ephemeral:true});
         }
     }
 
