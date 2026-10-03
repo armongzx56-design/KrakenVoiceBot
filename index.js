@@ -388,12 +388,15 @@ client.on("interactionCreate", async interaction => {
         const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(title).setDescription(cleanMessage || "📺 ดูคลิปรีวิวด้านล่าง")
             .setFooter({text:"Kraken Community • Announcement"}).setTimestamp();
         try {
-            // ส่ง Embed แยกจากลิงก์ เพื่อให้ Discord สร้าง YouTube Video Preview
-            await channel.send({ embeds:[embed] });
+            // รวมข้อความ + ลิงก์ไว้ในข้อความเดียว เพื่อให้ Discord สร้าง YouTube Video Preview
+            const announcementContent = cleanMessage
+                ? cleanMessage + (urls.length ? "\n\n" + urls.join("\n") : "")
+                : (urls.length ? urls.join("\n") : ""); 
 
-            if (urls.length) {
-                await channel.send({ content: urls.join("\n") });
-            }
+            await channel.send({
+                content: announcementContent,
+                embeds:[embed]
+            });
             return interaction.reply({content:"✅ ส่งประกาศไปที่ <#" + channel.id + "> เรียบร้อยแล้ว",ephemeral:true});
         } catch (error) {
             console.log("[ANNOUNCE ERROR]", error.message);
