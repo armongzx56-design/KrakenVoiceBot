@@ -76,6 +76,14 @@ const commands = [
         .addSubcommand(s => s.setName("test").setDescription("ทดสอบระบบ"))
 ].map(command => command.toJSON());
 
+function updateMemberActivity(guild) {
+    if (!guild || !client.user) return;
+
+    client.user.setActivity(`${guild.memberCount} Members`, {
+        type: ActivityType.Watching
+    });
+}
+
 function formatUptime(ms) {
     const totalSeconds = Math.floor(ms / 1000);
     const days = Math.floor(totalSeconds / 86400);
@@ -199,9 +207,9 @@ function scheduleReconnect(delay) {
 client.once("clientReady", async () => {
     console.log(`[BOT] Online: ${client.user.tag}`);
 
-    client.user.setActivity("Kraken Community", {
-        type: ActivityType.Watching
-    });
+    // แสดงจำนวนสมาชิกในเซิร์ฟเวอร์เป็นสถานะของบอท
+    const targetGuild = client.guilds.cache.get(process.env.GUILD_ID) || client.guilds.cache.first();
+    updateMemberActivity(targetGuild);
 
     await registerCommands();
     await connectToVoice();
@@ -397,6 +405,18 @@ client.on("interactionCreate", async interaction => {
             .setFooter({ text: "KrakenVoiceBot • 24/7" });
 
         await interaction.reply({ embeds: [embed] });
+    }
+});
+
+client.on("guildMemberAdd", member => {
+    if (member.guild.id === process.env.GUILD_ID) {
+        updateMemberActivity(member.guild);
+    }
+});
+
+client.on("guildMemberRemove", member => {
+    if (member.guild.id === process.env.GUILD_ID) {
+        updateMemberActivity(member.guild);
     }
 });
 
