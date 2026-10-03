@@ -394,7 +394,7 @@ client.on("interactionCreate", async interaction => {
             if (urls.length) {
                 await channel.send({ content: urls.join("\n") });
             }
-            return interaction.reply({content:"✅ ส่งประกาศไปที่ " + channel + " เรียบร้อยแล้ว",ephemeral:true});
+            return interaction.reply({content:"✅ ส่งประกาศไปที่ <#" + channel.id + "> เรียบร้อยแล้ว",ephemeral:true});
         } catch (error) {
             console.log("[ANNOUNCE ERROR]", error.message);
             return interaction.reply({content:"❌ ส่งประกาศไม่สำเร็จ: " + error.message,ephemeral:true});
