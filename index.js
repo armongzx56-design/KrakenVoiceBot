@@ -130,15 +130,27 @@ async function connectToVoice() {
     if (reconnecting) return;
 
     try {
-        console.log("[VOICE] Fetching server...");
+        const guildId = process.env.GUILD_ID;
+        if (!guildId) {
+            console.log("[VOICE ERROR] Missing GUILD_ID");
+            scheduleReconnect(1000);
+            return;
+        }
 
-        const guild = await client.guilds.fetch(process.env.GUILD_ID);
+        // ใช้ cache ก่อน ลด API round-trip และช่วยให้เข้าห้องเสียงเร็วขึ้น
+        const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId);
         const configuredChannelId = config[guild.id]?.voice247?.channelId || process.env.VOICE_CHANNEL_ID;
-        const channel = await guild.channels.fetch(configuredChannelId);
+        if (!configuredChannelId) {
+            console.log("[VOICE ERROR] Missing VOICE_CHANNEL_ID");
+            scheduleReconnect(1000);
+            return;
+        }
+
+        const channel = guild.channels.cache.get(configuredChannelId) || await guild.channels.fetch(configuredChannelId);
 
         if (!channel) {
             console.log("[VOICE ERROR] Voice channel not found");
-            scheduleReconnect(10000);
+            scheduleReconnect(1000);
             return;
         }
 
@@ -147,7 +159,7 @@ async function connectToVoice() {
             channel.type !== ChannelType.GuildStageVoice
         ) {
             console.log("[VOICE ERROR] Target is not a voice channel");
-            scheduleReconnect(10000);
+            scheduleReconnect(1000);
             return;
         }
 
@@ -182,7 +194,7 @@ async function connectToVoice() {
 
         connection.on(VoiceConnectionStatus.Disconnected, () => {
             console.log("[VOICE] Disconnected. Reconnecting...");
-            scheduleReconnect(5000);
+            scheduleReconnect(500);
         });
 
         connection.on(VoiceConnectionStatus.Destroyed, () => {
@@ -191,7 +203,7 @@ async function connectToVoice() {
 
         connection.on("error", error => {
             console.log("[VOICE ERROR]", error.message);
-            scheduleReconnect(5000);
+            scheduleReconnect(500);
         });
 
     } catch (error) {
@@ -215,12 +227,20 @@ function scheduleReconnect(delay) {
 client.once("clientReady", async () => {
     console.log(`[BOT] Online: ${client.user.tag}`);
 
-    // แสดงจำนวนสมาชิกในเซิร์ฟเวอร์เป็นสถานะของบอท
+    // เริ่ม Voice ทันที ไม่รอ slash command registration
     const targetGuild = client.guilds.cache.get(process.env.GUILD_ID) || client.guilds.cache.first();
     updateMemberActivity(targetGuild);
 
-    await registerCommands();
-    await connectToVoice();
+    connectToVoice().catch(error => {
+        console.log("[VOICE START ERROR]", error.message);
+        scheduleReconnect(500);
+    });
+
+    // งานที่ไม่จำเป็นต่อการเข้า Voice ทำต่อแบบแยกกัน
+    registerCommands().catch(error => {
+        console.log("[COMMANDS ERROR]", error.message);
+    });
+
     startRobloxUpdates(client, config, saveConfig);
 });
 
