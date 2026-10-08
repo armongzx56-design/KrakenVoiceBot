@@ -191,10 +191,13 @@ client.on("guildCreate", async guild => {
 client.once("clientReady", async () => {
     console.log(`[BOT] Online: ${client.user.tag}`);
 
-    // Start every configured 24/7 voice connection independently.
-    for (const guild of client.guilds.cache.values()) {
-        if (isGuildAllowed(guild.id)) updateMemberActivity(guild);
-    }
+    // Discord Activity is global for the bot account, so member count must come
+    // from one designated server only. Use GUILD_ID, or the first whitelist server.
+    const memberCountGuildId = process.env.GUILD_ID || getAllowedGuildIds()[0];
+    const memberCountGuild = memberCountGuildId
+        ? client.guilds.cache.get(memberCountGuildId)
+        : null;
+    if (memberCountGuild) updateMemberActivity(memberCountGuild);
     connectConfiguredVoices().catch(error => {
         console.log("[VOICE START ERROR]", error.message);
     });
@@ -426,15 +429,15 @@ client.on("interactionCreate", async interaction => {
 });
 
 client.on("guildMemberAdd", member => {
-    const targetGuildId = process.env.GUILD_ID;
-    if (!targetGuildId || member.guild.id === targetGuildId) {
+    const targetGuildId = process.env.GUILD_ID || getAllowedGuildIds()[0];
+    if (targetGuildId && member.guild.id === targetGuildId) {
         updateMemberActivity(member.guild);
     }
 });
 
 client.on("guildMemberRemove", member => {
-    const targetGuildId = process.env.GUILD_ID;
-    if (!targetGuildId || member.guild.id === targetGuildId) {
+    const targetGuildId = process.env.GUILD_ID || getAllowedGuildIds()[0];
+    if (targetGuildId && member.guild.id === targetGuildId) {
         updateMemberActivity(member.guild);
     }
 });
