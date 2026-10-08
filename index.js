@@ -108,7 +108,7 @@ async function syncAllGuildCommands() {
 }
 
 const PRIMARY_GUILD_ID = "1550132569432137903";
-const DEFAULT_ALLOWED_GUILD_IDS = ["1550132569432137903"];
+const DEFAULT_ALLOWED_GUILD_IDS = ["1550132569432137903", "1351064921802149939"];
 // Durable 24/7 voice fallback for Kraken Community.
 // This survives Render restarts/deploys even when data/config.json is reset.
 const DEFAULT_VOICE_CHANNEL_ID = "1550132569985777670";
