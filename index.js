@@ -340,7 +340,8 @@ client.on("interactionCreate", async interaction => {
         const embed = new EmbedBuilder()
             .setColor(0x5865F2)
             .setTitle("🎧 เข้าร่วมช่องเสียง")
-            .setDescription(`ห้องเสียง: <#${channel.id}>\\n\\nกด **เข้าห้องเสียง** เพื่อเปิดห้องที่แท็กไว้ได้ทันที`)
+            .setDescription(`กดปุ่มด้านล่างเพื่อเปิดห้องเสียงที่เลือกไว้`)
+            .addFields({name:"🎧 ห้องเสียง",value:`${channel}`,inline:false})
             .setFooter({text:"Kraken Community • Voice Channel"});
 
         const row = new ActionRowBuilder().addComponents(
@@ -351,7 +352,7 @@ client.on("interactionCreate", async interaction => {
                 .setURL(channelUrl)
         );
 
-        await interaction.channel.send({embeds:[embed],components:[row]});
+        await interaction.channel.send({content:`🎧 ห้องเสียง: ${channel}`, embeds:[embed], components:[row]});
         return interaction.reply({content:`✅ สร้างปุ่มเข้าห้อง <#${channel.id}> แล้ว`,ephemeral:true});
     }
 
