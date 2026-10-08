@@ -81,6 +81,27 @@ const commands = [
             .addChannelOption(o => o.setName("channel").setDescription("ห้องข่าว").addChannelTypes(ChannelType.GuildText).setRequired(true)))
         .addSubcommand(s => s.setName("test").setDescription("ทดสอบระบบ"))
 ].map(command => command.toJSON());
+// ==================== SERVER WHITELIST ====================
+function getAllowedGuildIds() {
+    return (process.env.ALLOWED_GUILDS || process.env.GUILD_ID || "")
+        .split(",").map(id => id.trim()).filter(Boolean);
+}
+function isGuildAllowed(guildId) {
+    return getAllowedGuildIds().includes(guildId);
+}
+async function syncGuildCommands(guild) {
+    if (!guild || !client.user) return;
+    const rest = new REST({ version: "10" }).setToken(process.env.BOT_TOKEN);
+    const body = isGuildAllowed(guild.id) ? commands : [];
+    await rest.put(Routes.applicationGuildCommands(client.user.id, guild.id), { body });
+    console.log(`[WHITELIST] ${isGuildAllowed(guild.id) ? "ENABLED" : "DISABLED"}: ${guild.name} (${guild.id})`);
+}
+async function syncAllGuildCommands() {
+    for (const guild of client.guilds.cache.values()) {
+        try { await syncGuildCommands(guild); }
+        catch (error) { console.log(`[WHITELIST ERROR] ${guild.name}: ${error.message}`); }
+    }
+}
 
 function updateMemberActivity(guild) {
     if (!guild || !client.user) return;
@@ -108,22 +129,12 @@ function formatUptime(ms) {
 }
 
 async function registerCommands() {
-    if (!process.env.GUILD_ID || !client.user) {
-        console.log("[COMMANDS] Missing GUILD_ID or bot user");
-        return;
-    }
-
+    if (!client.user) return;
     const rest = new REST({ version: "10" }).setToken(process.env.BOT_TOKEN);
-
-    await rest.put(
-        Routes.applicationGuildCommands(
-            client.user.id,
-            process.env.GUILD_ID
-        ),
-        { body: commands }
-    );
-
-    console.log("[COMMANDS] Slash commands registered successfully");
+    // Remove global commands; all commands are controlled per-server by the whitelist.
+    await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
+    await syncAllGuildCommands();
+    console.log("[COMMANDS] Whitelist sync complete");
 }
 
 async function connectToVoice() {
@@ -224,6 +235,12 @@ function scheduleReconnect(delay) {
     }, delay);
 }
 
+client.on("guildCreate", async guild => {
+    console.log(`[GUILD] Joined: ${guild.name} (${guild.id})`);
+    try { await syncGuildCommands(guild); }
+    catch (error) { console.log("[WHITELIST JOIN ERROR]", error.message); }
+});
+
 client.once("clientReady", async () => {
     console.log(`[BOT] Online: ${client.user.tag}`);
 
@@ -291,6 +308,10 @@ client.on("interactionCreate", async interaction => {
         return;
     }
     if (!interaction.isChatInputCommand()) return;
+
+    if (!interaction.guild || !isGuildAllowed(interaction.guild.id)) {
+        return interaction.reply({ content: "❌ KrakenHub ยังไม่ได้เปิดใช้งานในเซิร์ฟเวอร์นี้", ephemeral: true });
+    }
 
     if (interaction.commandName === "ping") {
         const latency = Date.now() - interaction.createdTimestamp;
