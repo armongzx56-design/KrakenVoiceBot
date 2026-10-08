@@ -84,7 +84,7 @@ const commands = [
 ].map(command => command.toJSON());
 // ==================== SERVER WHITELIST ====================
 function getAllowedGuildIds() {
-    return (process.env.ALLOWED_GUILDS || process.env.GUILD_ID || "")
+    return (process.env.ALLOWED_GUILDS || process.env.GUILD_ID || DEFAULT_ALLOWED_GUILD_IDS.join(","))
         .split(",").map(id => id.trim()).filter(Boolean);
 }
 function isGuildAllowed(guildId) {
@@ -105,6 +105,7 @@ async function syncAllGuildCommands() {
 }
 
 const PRIMARY_GUILD_ID = "1550132569432137903";
+const DEFAULT_ALLOWED_GUILD_IDS = ["1550132569432137903"];
 
 function updateMemberActivity(guild) {
     if (!guild || guild.id !== PRIMARY_GUILD_ID || !client.user) return;
