@@ -341,12 +341,23 @@ client.on("interactionCreate", async interaction => {
         saveConfig(config);
 
         stopVoiceForGuild(interaction.guild.id);
-        await connectToVoice(interaction.guild.id);
-        return interaction.reply({
-            content:"✅ ตั้งโหมด 24/7 แล้ว\n🎧 ห้อง: <#" + channel.id + ">\n\nบอทจะพยายามกลับเข้าห้องนี้อัตโนมัติเมื่อหลุด",
-            allowedMentions:{parse:["channels"]},
-            ephemeral:true
-        });
+
+        // ตอบ Interaction ก่อน เพื่อไม่ให้ Discord ขึ้น "แอปพลิเคชันไม่ตอบสนอง"
+        await interaction.deferReply({ ephemeral: true });
+
+        try {
+            await connectToVoice(interaction.guild.id);
+            return interaction.editReply({
+                content:"✅ ตั้งโหมด 24/7 แล้ว\n🎧 ห้อง: <#" + channel.id + ">\n\nบอทจะพยายามกลับเข้าห้องนี้อัตโนมัติเมื่อหลุด",
+                allowedMentions:{parse:["channels"]}
+            });
+        } catch (error) {
+            console.log("[247 ERROR]", error.message);
+            return interaction.editReply({
+                content:"⚠️ ตั้งค่า 24/7 แล้ว แต่ยังเชื่อมต่อห้องเสียงไม่สำเร็จ\n🎧 ห้อง: <#" + channel.id + ">\n\nบอทจะลองเชื่อมต่อใหม่อัตโนมัติ",
+                allowedMentions:{parse:["channels"]}
+            });
+        }
     }
 
     if (interaction.commandName === "roblox") {
