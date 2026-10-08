@@ -341,7 +341,7 @@ client.on("interactionCreate", async interaction => {
 
         // สำคัญ: ตอบ Discord ก่อนทุกอย่าง เพื่อให้ /247 ไม่ค้างที่ "กำลังคิด…"
         await interaction.reply({
-            content:"✅ ตั้งโหมด 24/7 แล้ว\n🎧 ห้อง: **" + channel.name + "**\n\n🔄 กำลังเชื่อมต่อห้องเสียง…",
+            content:"✅ ตั้งโหมด 24/7 แล้ว\n🎧 ห้อง: <#" + channel.id + ">\n\n🔄 กำลังเชื่อมต่อห้องเสียง…",
             ephemeral:true
         });
 
