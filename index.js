@@ -74,9 +74,6 @@ const commands = [
             .addRoleOption(o => o.setName("staff").setDescription("ยศทีมงาน")))
         .addSubcommand(s => s.setName("panel").setDescription("ส่ง Panel ใหม่")),
     new SlashCommandBuilder()
-        .setName("voicepanel").setDescription("สร้างปุ่มเข้าห้องเสียง")
-        .addChannelOption(o => o.setName("channel").setDescription("เลือกห้องเสียง").addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice).setRequired(true)),
-    new SlashCommandBuilder()
         .setName("247").setDescription("ให้บอทอยู่ในห้องเสียง 24/7")
         .addChannelOption(o => o.setName("channel").setDescription("เลือกห้องเสียงที่ให้บอทเข้า").addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice).setRequired(true)),
     new SlashCommandBuilder()
@@ -326,36 +323,6 @@ client.on("interactionCreate", async interaction => {
         const id=config[interaction.guild.id]?.ticket?.panelChannelId, ch=id ? interaction.guild.channels.cache.get(id) : null;
         if (!ch) return interaction.reply({content:"❌ ใช้ /ticket setup ก่อน",ephemeral:true}); await sendTicketPanel(ch); return interaction.reply({content:"✅ ส่ง Panel ใหม่แล้ว",ephemeral:true});
     }
-    if (interaction.commandName === "voicepanel") {
-        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-            return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
-        }
-
-        const channel = interaction.options.getChannel("channel", true);
-        if (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice) {
-            return interaction.reply({content:"❌ กรุณาเลือกห้อง Voice เท่านั้น",ephemeral:true});
-        }
-
-        const channelUrl = `https://discord.com/channels/${interaction.guild.id}/${channel.id}`;
-        const embed = new EmbedBuilder()
-            .setColor(0x5865F2)
-            .setTitle("🎧 เข้าร่วมช่องเสียง")
-            .setDescription(`กดปุ่มด้านล่างเพื่อเปิดห้องเสียงที่เลือกไว้`)
-            .addFields({name:"🎧 ห้องเสียง",value:`${channel}`,inline:false})
-            .setFooter({text:"Kraken Community • Voice Channel"});
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setLabel("เข้าห้องเสียง")
-                .setEmoji("🎧")
-                .setStyle(ButtonStyle.Link)
-                .setURL(channelUrl)
-        );
-
-        await interaction.channel.send({content:`🎧 ห้องเสียง: ${channel}`, embeds:[embed], components:[row]});
-        return interaction.reply({content:`✅ สร้างปุ่มเข้าห้อง <#${channel.id}> แล้ว`,ephemeral:true});
-    }
-
     if (interaction.commandName === "247") {
         if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
             return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
