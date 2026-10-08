@@ -108,6 +108,9 @@ async function syncAllGuildCommands() {
 
 const PRIMARY_GUILD_ID = "1550132569432137903";
 const DEFAULT_ALLOWED_GUILD_IDS = ["1550132569432137903"];
+// Durable 24/7 voice fallback for Kraken Community.
+// This survives Render restarts/deploys even when data/config.json is reset.
+const DEFAULT_VOICE_CHANNEL_ID = "1550132569985777670";
 
 function updateMemberActivity(guild) {
     if (!guild || guild.id !== PRIMARY_GUILD_ID || !client.user) return;
@@ -147,7 +150,10 @@ async function connectToVoice(guildId) {
     if (!guildId || reconnectingGuilds.has(guildId)) return;
     try {
         const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId);
-        const configuredChannelId = config[guild.id]?.voice247?.channelId || (guild.id === process.env.GUILD_ID ? process.env.VOICE_CHANNEL_ID : null);
+        const configuredChannelId =
+            config[guild.id]?.voice247?.channelId ||
+            (guild.id === PRIMARY_GUILD_ID ? DEFAULT_VOICE_CHANNEL_ID : null) ||
+            (guild.id === process.env.GUILD_ID ? process.env.VOICE_CHANNEL_ID : null);
         if (!configuredChannelId) { console.log(`[VOICE] No 24/7 channel configured for ${guild.name}`); return; }
         const channel = guild.channels.cache.get(configuredChannelId) || await guild.channels.fetch(configuredChannelId);
         if (!channel) { console.log(`[VOICE ERROR] Voice channel not found in ${guild.name}`); scheduleReconnect(guildId, 10000); return; }
@@ -184,7 +190,7 @@ function stopVoiceForGuild(guildId) {
 async function connectConfiguredVoices() {
     for (const guild of client.guilds.cache.values()) {
         if (!isGuildAllowed(guild.id)) continue;
-        if (config[guild.id]?.voice247?.enabled) await connectToVoice(guild.id);
+        if (guild.id === PRIMARY_GUILD_ID || config[guild.id]?.voice247?.enabled) await connectToVoice(guild.id);
     }
 }
 client.on("guildCreate", async guild => {
