@@ -36,6 +36,7 @@ const startedAt = Date.now();
 const voiceConnections = new Map();
 const reconnectTimers = new Map();
 const reconnectingGuilds = new Set();
+const intentionalVoiceChanges = new Set();
 const DATA_DIR = path.join(__dirname, "data");
 const CONFIG_FILE = path.join(DATA_DIR, "config.json");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -159,7 +160,12 @@ async function connectToVoice(guildId, onReady) {
         if (!channel) { console.log(`[VOICE ERROR] Voice channel not found in ${guild.name}`); scheduleReconnect(guildId, 750); return; }
         if (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice) { console.log(`[VOICE ERROR] Target is not a voice channel in ${guild.name}`); return; }
         const oldConnection = voiceConnections.get(guildId);
-        if (oldConnection) { try { oldConnection.destroy(); } catch {} }
+        if (oldConnection) {
+            // Prevent our own connection replacement from triggering the watchdog.
+            intentionalVoiceChanges.add(guildId);
+            setTimeout(() => intentionalVoiceChanges.delete(guildId), 1500);
+            try { oldConnection.destroy(); } catch {}
+        }
         const connection = joinVoiceChannel({ channelId: channel.id, guildId: guild.id, adapterCreator: guild.voiceAdapterCreator, selfMute: true, selfDeaf: true });
         voiceConnections.set(guildId, connection);
         console.log(`[VOICE] ${guild.name} -> ${channel.name}`);
@@ -196,7 +202,12 @@ function scheduleReconnect(guildId, delay) {
 
 function stopVoiceForGuild(guildId) {
     const connection = voiceConnections.get(guildId);
-    if (connection) { try { connection.destroy(); } catch {} voiceConnections.delete(guildId); }
+    if (connection) {
+        intentionalVoiceChanges.add(guildId);
+        setTimeout(() => intentionalVoiceChanges.delete(guildId), 1500);
+        try { connection.destroy(); } catch {}
+        voiceConnections.delete(guildId);
+    }
     const timer = reconnectTimers.get(guildId);
     if (timer) { clearTimeout(timer); reconnectTimers.delete(guildId); }
     reconnectingGuilds.delete(guildId);
@@ -224,8 +235,12 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 
     // ถ้าบอทถูกเตะ/หลุดจากห้องเสียง ให้เข้าใหม่ทันที
     if (!newState.channelId || newState.channelId !== configuredChannelId) {
+        if (intentionalVoiceChanges.has(newState.guild.id)) {
+            console.log(`[VOICE WATCHDOG] Ignoring intentional voice change in ${newState.guild.name}`);
+            return;
+        }
         console.log(`[VOICE WATCHDOG] Bot left voice in ${newState.guild.name}. Reconnecting...`);
-        scheduleReconnect(newState.guild.id, 250);
+        scheduleReconnect(newState.guild.id, 1000);
     }
 });
 
