@@ -85,13 +85,14 @@ const commands = [
 ].map(command => command.toJSON());
 // ==================== SERVER WHITELIST ====================
 function getAllowedGuildIds() {
-    return (process.env.ALLOWED_GUILDS || process.env.GUILD_ID || DEFAULT_ALLOWED_GUILD_IDS.join(","))
+    // These three servers are permanently supported.
+    // Render environment variables may add more servers, but can never remove these.
+    const configured = (process.env.ALLOWED_GUILDS || process.env.GUILD_ID || "")
         .split(",").map(id => id.trim()).filter(Boolean);
+    return [...new Set([...DEFAULT_ALLOWED_GUILD_IDS, ...configured])];
 }
 function isGuildAllowed(guildId) {
-    // Kraken Community is always the primary/allowed server.
-    // Keep any additional ALLOWED_GUILDS entries working as well.
-    return guildId === PRIMARY_GUILD_ID || getAllowedGuildIds().includes(guildId);
+    return getAllowedGuildIds().includes(guildId);
 }
 async function syncGuildCommands(guild) {
     if (!guild || !client.user) return;
