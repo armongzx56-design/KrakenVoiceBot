@@ -156,7 +156,7 @@ async function connectToVoice(guildId) {
             (guild.id === process.env.GUILD_ID ? process.env.VOICE_CHANNEL_ID : null);
         if (!configuredChannelId) { console.log(`[VOICE] No 24/7 channel configured for ${guild.name}`); return; }
         const channel = guild.channels.cache.get(configuredChannelId) || await guild.channels.fetch(configuredChannelId);
-        if (!channel) { console.log(`[VOICE ERROR] Voice channel not found in ${guild.name}`); scheduleReconnect(guildId, 10000); return; }
+        if (!channel) { console.log(`[VOICE ERROR] Voice channel not found in ${guild.name}`); scheduleReconnect(guildId, 750); return; }
         if (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice) { console.log(`[VOICE ERROR] Target is not a voice channel in ${guild.name}`); return; }
         const oldConnection = voiceConnections.get(guildId);
         if (oldConnection) { try { oldConnection.destroy(); } catch {} }
@@ -166,10 +166,10 @@ async function connectToVoice(guildId) {
         connection.on(VoiceConnectionStatus.Signalling, () => console.log(`[VOICE] Signalling: ${guild.name}`));
         connection.on(VoiceConnectionStatus.Connecting, () => console.log(`[VOICE] Connecting: ${guild.name}`));
         connection.on(VoiceConnectionStatus.Ready, () => { reconnectingGuilds.delete(guildId); console.log(`[VOICE] CONNECTED: ${guild.name} / ${channel.name}`); });
-        connection.on(VoiceConnectionStatus.Disconnected, () => { console.log(`[VOICE] Disconnected: ${guild.name}. Reconnecting...`); scheduleReconnect(guildId, 500); });
+        connection.on(VoiceConnectionStatus.Disconnected, () => { console.log(`[VOICE] Disconnected: ${guild.name}. Reconnecting in 300ms...`); scheduleReconnect(guildId, 300); });
         connection.on(VoiceConnectionStatus.Destroyed, () => console.log(`[VOICE] Connection destroyed: ${guild.name}`));
-        connection.on("error", error => { console.log(`[VOICE ERROR] ${guild.name}: ${error.message}`); scheduleReconnect(guildId, 500); });
-    } catch (error) { console.log(`[VOICE ERROR] ${guildId}: ${error.message}`); scheduleReconnect(guildId, 10000); }
+        connection.on("error", error => { console.log(`[VOICE ERROR] ${guild.name}: ${error.message}`); scheduleReconnect(guildId, 300); });
+    } catch (error) { console.log(`[VOICE ERROR] ${guildId}: ${error.message}`); scheduleReconnect(guildId, 750); }
 }
 
 function scheduleReconnect(guildId, delay) {
