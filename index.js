@@ -181,7 +181,16 @@ async function connectToVoice(guildId, onReady) {
 function scheduleReconnect(guildId, delay) {
     if (!guildId || reconnectTimers.has(guildId)) return;
     reconnectingGuilds.add(guildId);
-    const timer = setTimeout(async () => { reconnectTimers.delete(guildId); reconnectingGuilds.delete(guildId); await connectToVoice(guildId); }, delay);
+    const timer = setTimeout(async () => {
+        reconnectTimers.delete(guildId);
+        reconnectingGuilds.delete(guildId);
+        try {
+            await connectToVoice(guildId);
+        } catch (error) {
+            console.log("[VOICE RECONNECT ERROR]", error.message);
+            scheduleReconnect(guildId, 1000);
+        }
+    }, delay);
     reconnectTimers.set(guildId, timer);
 }
 
@@ -199,6 +208,27 @@ async function connectConfiguredVoices() {
         if (guild.id === PRIMARY_GUILD_ID || config[guild.id]?.voice247?.enabled) await connectToVoice(guild.id);
     }
 }
+client.on("voiceStateUpdate", async (oldState, newState) => {
+    if (!client.user || newState.id !== client.user.id) return;
+    if (!isGuildAllowed(newState.guild.id)) return;
+
+    const configured = newState.guild.id === PRIMARY_GUILD_ID ||
+        config[newState.guild.id]?.voice247?.enabled;
+    if (!configured) return;
+
+    const configuredChannelId =
+        config[newState.guild.id]?.voice247?.channelId ||
+        (newState.guild.id === PRIMARY_GUILD_ID ? DEFAULT_VOICE_CHANNEL_ID : null);
+
+    if (!configuredChannelId) return;
+
+    // ถ้าบอทถูกเตะ/หลุดจากห้องเสียง ให้เข้าใหม่ทันที
+    if (!newState.channelId || newState.channelId !== configuredChannelId) {
+        console.log(`[VOICE WATCHDOG] Bot left voice in ${newState.guild.name}. Reconnecting...`);
+        scheduleReconnect(newState.guild.id, 250);
+    }
+});
+
 client.on("guildCreate", async guild => {
     console.log(`[GUILD] Joined: ${guild.name} (${guild.id})`);
     try { await syncGuildCommands(guild); }
