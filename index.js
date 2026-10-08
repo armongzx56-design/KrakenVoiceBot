@@ -339,27 +339,33 @@ client.on("interactionCreate", async interaction => {
             return interaction.reply({content:"❌ กรุณาเลือกห้องเสียงเท่านั้น",ephemeral:true});
         }
 
-        config[interaction.guild.id] ??= {};
-        config[interaction.guild.id].voice247 = {
-            enabled: true,
-            channelId: channel.id,
-            channelName: channel.name
-        };
-        saveConfig(config);
-
-        stopVoiceForGuild(interaction.guild.id);
-
-        // ตอบทันที ไม่รอ Voice connection เพื่อไม่ให้ Discord ค้างที่ "กำลังคิด…"
+        // สำคัญ: ตอบ Discord ก่อนทุกอย่าง เพื่อให้ /247 ไม่ค้างที่ "กำลังคิด…"
         await interaction.reply({
             content:"✅ ตั้งโหมด 24/7 แล้ว\n🎧 ห้อง: <#" + channel.id + ">\n\n🔄 กำลังเชื่อมต่อห้องเสียง…",
             allowedMentions:{parse:["channels"]},
             ephemeral:true
         });
 
-        // เชื่อม Voice แบบ background หลังจากตอบคำสั่งแล้ว
-        connectToVoice(interaction.guild.id)
-            .then(() => console.log("[247] Background voice connect started"))
-            .catch(error => console.log("[247 ERROR]", error.message));
+        // งานทั้งหมดหลังจากตอบ Interaction แล้ว
+        setImmediate(() => {
+            try {
+                config[interaction.guild.id] ??= {};
+                config[interaction.guild.id].voice247 = {
+                    enabled: true,
+                    channelId: channel.id,
+                    channelName: channel.name
+                };
+                saveConfig(config);
+
+                stopVoiceForGuild(interaction.guild.id);
+
+                connectToVoice(interaction.guild.id)
+                    .then(() => console.log("[247] Background voice connect started"))
+                    .catch(error => console.log("[247 ERROR]", error.message));
+            } catch (error) {
+                console.log("[247 BACKGROUND ERROR]", error.message);
+            }
+        });
 
         return;
     }
