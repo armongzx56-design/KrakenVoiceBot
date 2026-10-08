@@ -193,10 +193,10 @@ client.once("clientReady", async () => {
 
     // Discord Activity is global for the bot account, so member count must come
     // from one designated server only. Use GUILD_ID, or the first whitelist server.
-    const memberCountGuildId = process.env.GUILD_ID || getAllowedGuildIds()[0];
-    const memberCountGuild = memberCountGuildId
-        ? client.guilds.cache.get(memberCountGuildId)
-        : null;
+    // KrakenHub primary server for member count.
+    // Do NOT use GUILD_ID here because it may point to another bot/server.
+    const memberCountGuildId = "1528076742994952202";
+    const memberCountGuild = client.guilds.cache.get(memberCountGuildId);
     if (memberCountGuild) updateMemberActivity(memberCountGuild);
     connectConfiguredVoices().catch(error => {
         console.log("[VOICE START ERROR]", error.message);
@@ -429,14 +429,14 @@ client.on("interactionCreate", async interaction => {
 });
 
 client.on("guildMemberAdd", member => {
-    const targetGuildId = process.env.GUILD_ID || getAllowedGuildIds()[0];
+    const targetGuildId = "1528076742994952202";
     if (targetGuildId && member.guild.id === targetGuildId) {
         updateMemberActivity(member.guild);
     }
 });
 
 client.on("guildMemberRemove", member => {
-    const targetGuildId = process.env.GUILD_ID || getAllowedGuildIds()[0];
+    const targetGuildId = "1528076742994952202";
     if (targetGuildId && member.guild.id === targetGuildId) {
         updateMemberActivity(member.guild);
     }
