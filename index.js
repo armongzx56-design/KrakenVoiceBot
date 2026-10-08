@@ -104,8 +104,10 @@ async function syncAllGuildCommands() {
     }
 }
 
+const PRIMARY_GUILD_ID = "1550132569432137903";
+
 function updateMemberActivity(guild) {
-    if (!guild || !client.user) return;
+    if (!guild || guild.id !== PRIMARY_GUILD_ID || !client.user) return;
 
     const memberCount = guild.memberCount;
     client.user.setActivity(`${memberCount} Members`, {
@@ -195,7 +197,7 @@ client.once("clientReady", async () => {
     // from one designated server only. Use GUILD_ID, or the first whitelist server.
     // KrakenHub primary server for member count.
     // Do NOT use GUILD_ID here because it may point to another bot/server.
-    const memberCountGuildId = "1528076742994952202";
+    const memberCountGuildId = PRIMARY_GUILD_ID;
     const memberCountGuild = client.guilds.cache.get(memberCountGuildId);
     if (memberCountGuild) updateMemberActivity(memberCountGuild);
     connectConfiguredVoices().catch(error => {
@@ -429,7 +431,7 @@ client.on("interactionCreate", async interaction => {
 });
 
 client.on("guildMemberAdd", member => {
-    const targetGuildId = "1528076742994952202";
+    const targetGuildId = PRIMARY_GUILD_ID
     if (targetGuildId && member.guild.id === targetGuildId) {
         updateMemberActivity(member.guild);
     }
