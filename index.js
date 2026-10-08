@@ -146,7 +146,7 @@ async function registerCommands() {
     console.log("[COMMANDS] Whitelist sync complete");
 }
 
-async function connectToVoice(guildId) {
+async function connectToVoice(guildId, onReady) {
     if (!guildId || reconnectingGuilds.has(guildId)) return;
     try {
         const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId);
@@ -165,7 +165,13 @@ async function connectToVoice(guildId) {
         console.log(`[VOICE] ${guild.name} -> ${channel.name}`);
         connection.on(VoiceConnectionStatus.Signalling, () => console.log(`[VOICE] Signalling: ${guild.name}`));
         connection.on(VoiceConnectionStatus.Connecting, () => console.log(`[VOICE] Connecting: ${guild.name}`));
-        connection.on(VoiceConnectionStatus.Ready, () => { reconnectingGuilds.delete(guildId); console.log(`[VOICE] CONNECTED: ${guild.name} / ${channel.name}`); });
+        connection.on(VoiceConnectionStatus.Ready, () => {
+            reconnectingGuilds.delete(guildId);
+            console.log(`[VOICE] CONNECTED: ${guild.name} / ${channel.name}`);
+            if (typeof onReady === "function") {
+                try { onReady(channel); } catch (error) { console.log("[VOICE READY CALLBACK ERROR]", error.message); }
+            }
+        });
         connection.on(VoiceConnectionStatus.Disconnected, () => { console.log(`[VOICE] Disconnected: ${guild.name}. Reconnecting in 300ms...`); scheduleReconnect(guildId, 300); });
         connection.on(VoiceConnectionStatus.Destroyed, () => console.log(`[VOICE] Connection destroyed: ${guild.name}`));
         connection.on("error", error => { console.log(`[VOICE ERROR] ${guild.name}: ${error.message}`); scheduleReconnect(guildId, 300); });
@@ -358,9 +364,26 @@ client.on("interactionCreate", async interaction => {
 
                 stopVoiceForGuild(interaction.guild.id);
 
-                connectToVoice(interaction.guild.id)
+                connectToVoice(interaction.guild.id, async readyChannel => {
+                    try {
+                        await interaction.editReply({
+                            content:"✅ เชื่อมต่อห้องเสียงสำเร็จแล้ว\n🎧 ห้อง: <#" + readyChannel.id + ">\n\n🟢 สถานะ: **เชื่อมต่ออยู่ 24/7**"
+                        });
+                    } catch (error) {
+                        console.log("[247 STATUS UPDATE ERROR]", error.message);
+                    }
+                })
                     .then(() => console.log("[247] Background voice connect started"))
-                    .catch(error => console.log("[247 ERROR]", error.message));
+                    .catch(async error => {
+                        console.log("[247 ERROR]", error.message);
+                        try {
+                            await interaction.editReply({
+                                content:"❌ เชื่อมต่อห้องเสียงไม่สำเร็จ\n🎧 ห้อง: <#" + channel.id + ">\n\n🔴 สถานะ: **เชื่อมต่อไม่สำเร็จ**"
+                            });
+                        } catch (editError) {
+                            console.log("[247 ERROR STATUS UPDATE]", editError.message);
+                        }
+                    });
             } catch (error) {
                 console.log("[247 BACKGROUND ERROR]", error.message);
             }
