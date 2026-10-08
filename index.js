@@ -32,9 +32,10 @@ const client = new Client({
 });
 
 const startedAt = Date.now();
-let connection = null;
-let reconnectTimer = null;
-let reconnecting = false;
+// Voice state is isolated per Discord server (guild).
+const voiceConnections = new Map();
+const reconnectTimers = new Map();
+const reconnectingGuilds = new Set();
 const DATA_DIR = path.join(__dirname, "data");
 const CONFIG_FILE = path.join(DATA_DIR, "config.json");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -137,104 +138,50 @@ async function registerCommands() {
     console.log("[COMMANDS] Whitelist sync complete");
 }
 
-async function connectToVoice() {
-    if (reconnecting) return;
-
+async function connectToVoice(guildId) {
+    if (!guildId || reconnectingGuilds.has(guildId)) return;
     try {
-        const guildId = process.env.GUILD_ID;
-        if (!guildId) {
-            console.log("[VOICE ERROR] Missing GUILD_ID");
-            scheduleReconnect(1000);
-            return;
-        }
-
-        // ใช้ cache ก่อน ลด API round-trip และช่วยให้เข้าห้องเสียงเร็วขึ้น
         const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId);
-        const configuredChannelId = config[guild.id]?.voice247?.channelId || process.env.VOICE_CHANNEL_ID;
-        if (!configuredChannelId) {
-            console.log("[VOICE ERROR] Missing VOICE_CHANNEL_ID");
-            scheduleReconnect(1000);
-            return;
-        }
-
+        const configuredChannelId = config[guild.id]?.voice247?.channelId || (guild.id === process.env.GUILD_ID ? process.env.VOICE_CHANNEL_ID : null);
+        if (!configuredChannelId) { console.log(`[VOICE] No 24/7 channel configured for ${guild.name}`); return; }
         const channel = guild.channels.cache.get(configuredChannelId) || await guild.channels.fetch(configuredChannelId);
+        if (!channel) { console.log(`[VOICE ERROR] Voice channel not found in ${guild.name}`); scheduleReconnect(guildId, 10000); return; }
+        if (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice) { console.log(`[VOICE ERROR] Target is not a voice channel in ${guild.name}`); return; }
+        const oldConnection = voiceConnections.get(guildId);
+        if (oldConnection) { try { oldConnection.destroy(); } catch {} }
+        const connection = joinVoiceChannel({ channelId: channel.id, guildId: guild.id, adapterCreator: guild.voiceAdapterCreator, selfMute: true, selfDeaf: true });
+        voiceConnections.set(guildId, connection);
+        console.log(`[VOICE] ${guild.name} -> ${channel.name}`);
+        connection.on(VoiceConnectionStatus.Signalling, () => console.log(`[VOICE] Signalling: ${guild.name}`));
+        connection.on(VoiceConnectionStatus.Connecting, () => console.log(`[VOICE] Connecting: ${guild.name}`));
+        connection.on(VoiceConnectionStatus.Ready, () => { reconnectingGuilds.delete(guildId); console.log(`[VOICE] CONNECTED: ${guild.name} / ${channel.name}`); });
+        connection.on(VoiceConnectionStatus.Disconnected, () => { console.log(`[VOICE] Disconnected: ${guild.name}. Reconnecting...`); scheduleReconnect(guildId, 500); });
+        connection.on(VoiceConnectionStatus.Destroyed, () => console.log(`[VOICE] Connection destroyed: ${guild.name}`));
+        connection.on("error", error => { console.log(`[VOICE ERROR] ${guild.name}: ${error.message}`); scheduleReconnect(guildId, 500); });
+    } catch (error) { console.log(`[VOICE ERROR] ${guildId}: ${error.message}`); scheduleReconnect(guildId, 10000); }
+}
 
-        if (!channel) {
-            console.log("[VOICE ERROR] Voice channel not found");
-            scheduleReconnect(1000);
-            return;
-        }
+function scheduleReconnect(guildId, delay) {
+    if (!guildId || reconnectTimers.has(guildId)) return;
+    reconnectingGuilds.add(guildId);
+    const timer = setTimeout(async () => { reconnectTimers.delete(guildId); reconnectingGuilds.delete(guildId); await connectToVoice(guildId); }, delay);
+    reconnectTimers.set(guildId, timer);
+}
 
-        if (
-            channel.type !== ChannelType.GuildVoice &&
-            channel.type !== ChannelType.GuildStageVoice
-        ) {
-            console.log("[VOICE ERROR] Target is not a voice channel");
-            scheduleReconnect(1000);
-            return;
-        }
+function stopVoiceForGuild(guildId) {
+    const connection = voiceConnections.get(guildId);
+    if (connection) { try { connection.destroy(); } catch {} voiceConnections.delete(guildId); }
+    const timer = reconnectTimers.get(guildId);
+    if (timer) { clearTimeout(timer); reconnectTimers.delete(guildId); }
+    reconnectingGuilds.delete(guildId);
+}
 
-        if (connection) {
-            try {
-                connection.destroy();
-            } catch {}
-        }
-
-        connection = joinVoiceChannel({
-            channelId: channel.id,
-            guildId: guild.id,
-            adapterCreator: guild.voiceAdapterCreator,
-            selfMute: true,
-            selfDeaf: true
-        });
-
-        console.log(`[VOICE] Joining: ${guild.name} / ${channel.name}`);
-
-        connection.on(VoiceConnectionStatus.Signalling, () => {
-            console.log("[VOICE] Signalling...");
-        });
-
-        connection.on(VoiceConnectionStatus.Connecting, () => {
-            console.log("[VOICE] Connecting...");
-        });
-
-        connection.on(VoiceConnectionStatus.Ready, () => {
-            reconnecting = false;
-            console.log("[VOICE] CONNECTED SUCCESSFULLY!");
-        });
-
-        connection.on(VoiceConnectionStatus.Disconnected, () => {
-            console.log("[VOICE] Disconnected. Reconnecting...");
-            scheduleReconnect(500);
-        });
-
-        connection.on(VoiceConnectionStatus.Destroyed, () => {
-            console.log("[VOICE] Connection destroyed");
-        });
-
-        connection.on("error", error => {
-            console.log("[VOICE ERROR]", error.message);
-            scheduleReconnect(500);
-        });
-
-    } catch (error) {
-        console.log("[VOICE ERROR]", error.message);
-        scheduleReconnect(10000);
+async function connectConfiguredVoices() {
+    for (const guild of client.guilds.cache.values()) {
+        if (!isGuildAllowed(guild.id)) continue;
+        if (config[guild.id]?.voice247?.enabled) await connectToVoice(guild.id);
     }
 }
-
-function scheduleReconnect(delay) {
-    if (reconnectTimer) return;
-
-    reconnecting = true;
-
-    reconnectTimer = setTimeout(async () => {
-        reconnectTimer = null;
-        reconnecting = false;
-        await connectToVoice();
-    }, delay);
-}
-
 client.on("guildCreate", async guild => {
     console.log(`[GUILD] Joined: ${guild.name} (${guild.id})`);
     try { await syncGuildCommands(guild); }
@@ -244,13 +191,12 @@ client.on("guildCreate", async guild => {
 client.once("clientReady", async () => {
     console.log(`[BOT] Online: ${client.user.tag}`);
 
-    // เริ่ม Voice ทันที ไม่รอ slash command registration
-    const targetGuild = client.guilds.cache.get(process.env.GUILD_ID) || client.guilds.cache.first();
-    updateMemberActivity(targetGuild);
-
-    connectToVoice().catch(error => {
+    // Start every configured 24/7 voice connection independently.
+    for (const guild of client.guilds.cache.values()) {
+        if (isGuildAllowed(guild.id)) updateMemberActivity(guild);
+    }
+    connectConfiguredVoices().catch(error => {
         console.log("[VOICE START ERROR]", error.message);
-        scheduleReconnect(500);
     });
 
     // งานที่ไม่จำเป็นต่อการเข้า Voice ทำต่อแบบแยกกัน
@@ -380,20 +326,8 @@ client.on("interactionCreate", async interaction => {
         };
         saveConfig(config);
 
-        process.env.GUILD_ID = interaction.guild.id;
-        process.env.VOICE_CHANNEL_ID = channel.id;
-
-        if (connection) {
-            try { connection.destroy(); } catch {}
-            connection = null;
-        }
-        reconnecting = false;
-        if (reconnectTimer) {
-            clearTimeout(reconnectTimer);
-            reconnectTimer = null;
-        }
-
-        await connectToVoice();
+        stopVoiceForGuild(interaction.guild.id);
+        await connectToVoice(interaction.guild.id);
         return interaction.reply({
             content:"✅ ตั้งโหมด 24/7 แล้ว\n🎧 ห้อง: " + channel + "\n\nบอทจะพยายามกลับเข้าห้องนี้อัตโนมัติเมื่อหลุด",
             ephemeral:true
@@ -448,7 +382,9 @@ client.on("interactionCreate", async interaction => {
     }
 
     if (interaction.commandName === "stats") {
-        const voiceStatus = connection?.state?.status || "Unknown";
+        const guildConnection = voiceConnections.get(interaction.guild.id);
+        const voiceStatus = guildConnection?.state?.status || "Not connected";
+        const guildReconnecting = reconnectingGuilds.has(interaction.guild.id);
         const embed = new EmbedBuilder()
             .setTitle("📊 KrakenVoiceBot Stats")
             .addFields(
@@ -479,7 +415,7 @@ client.on("interactionCreate", async interaction => {
                 },
                 {
                     name: "🔄 Reconnect",
-                    value: reconnecting ? "กำลังเชื่อมต่อ..." : "พร้อมใช้งาน",
+                    value: guildReconnecting ? "กำลังเชื่อมต่อ..." : "พร้อมใช้งาน",
                     inline: true
                 }
             )
