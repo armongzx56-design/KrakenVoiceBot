@@ -317,8 +317,15 @@ client.on("interactionCreate", async interaction => {
         const sub=interaction.options.getSubcommand();
         if (sub === "setup") {
             const ch=interaction.options.getChannel("channel",true), cat=interaction.options.getChannel("category"), role=interaction.options.getRole("staff");
-            config[interaction.guild.id] ??= {}; config[interaction.guild.id].ticket={panelChannelId:ch.id,categoryId:cat?.id || null,staffRoleId:role?.id || null}; saveConfig(config); await sendTicketPanel(ch);
-            return interaction.reply({content:"✅ ตั้ง Ticket สำเร็จที่ " + ch,ephemeral:true});
+            config[interaction.guild.id] ??= {}; config[interaction.guild.id].ticket={panelChannelId:ch.id,categoryId:cat?.id || null,staffRoleId:role?.id || null}; saveConfig(config);
+            await interaction.deferReply({ephemeral:true});
+            try {
+                await sendTicketPanel(ch);
+                return interaction.editReply({content:"✅ ตั้ง Ticket สำเร็จที่ " + ch,allowedMentions:{parse:["channels"]}});
+            } catch (error) {
+                console.log("[TICKET SETUP ERROR]", error.message);
+                return interaction.editReply("❌ ตั้ง Ticket ไม่สำเร็จ: " + error.message);
+            }
         }
         const id=config[interaction.guild.id]?.ticket?.panelChannelId, ch=id ? interaction.guild.channels.cache.get(id) : null;
         if (!ch) return interaction.reply({content:"❌ ใช้ /ticket setup ก่อน",ephemeral:true}); await sendTicketPanel(ch); return interaction.reply({content:"✅ ส่ง Panel ใหม่แล้ว",ephemeral:true});
@@ -394,12 +401,21 @@ client.on("interactionCreate", async interaction => {
                 urls.length ? urls.join("\n") : null
             ].filter(Boolean).join("\n\n");
 
+            await interaction.deferReply({ephemeral:true});
+
             await channel.send({
                 content: announcementContent || "📢 ประกาศ"
             });
-            return interaction.reply({content:"✅ ส่งประกาศไปที่ <#" + channel.id + "> เรียบร้อยแล้ว",ephemeral:true});
+
+            return interaction.editReply({
+                content:"✅ ส่งประกาศไปที่ <#" + channel.id + "> เรียบร้อยแล้ว",
+                allowedMentions:{parse:["channels"]}
+            });
         } catch (error) {
             console.log("[ANNOUNCE ERROR]", error.message);
+            if (interaction.deferred || interaction.replied) {
+                return interaction.editReply("❌ ส่งประกาศไม่สำเร็จ: " + error.message);
+            }
             return interaction.reply({content:"❌ ส่งประกาศไม่สำเร็จ: " + error.message,ephemeral:true});
         }
     }
@@ -456,7 +472,7 @@ client.on("guildMemberAdd", member => {
 });
 
 client.on("guildMemberRemove", member => {
-    const targetGuildId = "1528076742994952202";
+    const targetGuildId = PRIMARY_GUILD_ID;
     if (targetGuildId && member.guild.id === targetGuildId) {
         updateMemberActivity(member.guild);
     }
