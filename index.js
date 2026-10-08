@@ -343,7 +343,8 @@ client.on("interactionCreate", async interaction => {
         stopVoiceForGuild(interaction.guild.id);
         await connectToVoice(interaction.guild.id);
         return interaction.reply({
-            content:"✅ ตั้งโหมด 24/7 แล้ว\n🎧 ห้อง: " + channel + "\n\nบอทจะพยายามกลับเข้าห้องนี้อัตโนมัติเมื่อหลุด",
+            content:"✅ ตั้งโหมด 24/7 แล้ว\n🎧 ห้อง: <#" + channel.id + ">\n\nบอทจะพยายามกลับเข้าห้องนี้อัตโนมัติเมื่อหลุด",
+            allowedMentions:{parse:["channels"]},
             ephemeral:true
         });
     }
