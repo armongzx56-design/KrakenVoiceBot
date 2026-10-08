@@ -88,7 +88,9 @@ function getAllowedGuildIds() {
         .split(",").map(id => id.trim()).filter(Boolean);
 }
 function isGuildAllowed(guildId) {
-    return getAllowedGuildIds().includes(guildId);
+    // Kraken Community is always the primary/allowed server.
+    // Keep any additional ALLOWED_GUILDS entries working as well.
+    return guildId === PRIMARY_GUILD_ID || getAllowedGuildIds().includes(guildId);
 }
 async function syncGuildCommands(guild) {
     if (!guild || !client.user) return;
