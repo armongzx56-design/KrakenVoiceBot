@@ -122,10 +122,25 @@ const DEFAULT_ALLOWED_GUILD_IDS = ["1550132569432137903", "1528076742994952202",
 // This survives Render restarts/deploys even when data/config.json is reset.
 const DEFAULT_VOICE_CHANNEL_ID = "1550132569985777670";
 
-function updateMemberActivity(guild) {
+const trackedMemberCounts = new Map();
+
+function updateMemberActivity(guild, delta = null) {
     if (!guild || guild.id !== PRIMARY_GUILD_ID || !client.user) return;
 
-    const memberCount = guild.memberCount;
+    let memberCount;
+    if (delta === null) {
+        // Resync the baseline on startup; gateway add/remove events adjust it below.
+        memberCount = guild.memberCount;
+    } else {
+        // Discord.js may expose the old count during member-remove events.
+        // Keep our own count and apply exactly one +1/-1 per gateway event.
+        const previous = trackedMemberCounts.has(guild.id)
+            ? trackedMemberCounts.get(guild.id)
+            : Math.max(0, guild.memberCount - delta);
+        memberCount = Math.max(0, previous + delta);
+    }
+    trackedMemberCounts.set(guild.id, memberCount);
+
     client.user.setActivity(`${memberCount} Members`, {
         type: ActivityType.Watching
     });
@@ -649,14 +664,14 @@ client.on("interactionCreate", async interaction => {
 client.on("guildMemberAdd", member => {
     const targetGuildId = PRIMARY_GUILD_ID
     if (targetGuildId && member.guild.id === targetGuildId) {
-        updateMemberActivity(member.guild);
+        updateMemberActivity(member.guild, +1);
     }
 });
 
 client.on("guildMemberRemove", member => {
     const targetGuildId = PRIMARY_GUILD_ID;
     if (targetGuildId && member.guild.id === targetGuildId) {
-        updateMemberActivity(member.guild);
+        updateMemberActivity(member.guild, -1);
     }
 });
 
