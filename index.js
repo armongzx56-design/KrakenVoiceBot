@@ -438,7 +438,7 @@ client.on("interactionCreate", async interaction => {
             saveConfig(config);
             startAutoPost(interaction.guild.id);
             return interaction.reply({
-                content: "✅ ตั้งข้อความอัตโนมัติสำเร็จแล้ว\n📍 ห้อง: " + channel + "\n⏰ จะส่งครั้งแรกใน 1 ชั่วโมง และส่งซ้ำทุก 1 ชั่วโมง\n🛑 ใช้ `/autopost stop` เพื่อปิด",
+                content: "✅ ตั้งข้อความอัตโนมัติสำเร็จแล้ว\\n📍 ห้อง: " + channel + "\\n⏰ ส่งซ้ำทุก " + intervalMinutes + " นาที" + (intervalMinutes % 60 === 0 ? " (" + (intervalMinutes / 60) + " ชั่วโมง)" : "") + "\\n📨 ส่งครั้งแรกเมื่อครบช่วงเวลาที่ตั้งไว้\\n🛑 ใช้ `/autopost stop` เพื่อปิด",
                 ephemeral: true,
                 allowedMentions: { parse: [] }
             });
@@ -458,7 +458,7 @@ client.on("interactionCreate", async interaction => {
             return interaction.reply({ content: "ℹ️ ยังไม่ได้เปิดใช้ ใช้ `/autopost setup` เพื่อตั้งค่า", ephemeral: true });
         }
         return interaction.reply({
-            content: "✅ เปิดใช้งานอยู่\n📍 ห้อง: <#" + setting.channelId + ">\n⏰ ส่งทุก 1 ชั่วโมง",
+            content: "✅ เปิดใช้งานอยู่\\n📍 ห้อง: <#" + setting.channelId + ">\\n⏰ ส่งทุก " + (Number(setting.intervalMinutes) || 60) + " นาที",
             ephemeral: true
         });
     }
