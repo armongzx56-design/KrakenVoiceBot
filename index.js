@@ -58,10 +58,11 @@ const commands = [
         .addStringOption(o => o.setName("message").setDescription("ข้อความประกาศ").setRequired(true))
         .addStringOption(o => o.setName("title").setDescription("หัวข้อประกาศ").setRequired(false)),
     new SlashCommandBuilder()
-        .setName("autopost").setDescription("ตั้งข้อความส่งอัตโนมัติทุก 1 ชั่วโมง")
-        .addSubcommand(sub => sub.setName("setup").setDescription("ตั้งห้องและข้อความอัตโนมัติ")
+        .setName("autopost").setDescription("ตั้งข้อความส่งอัตโนมัติตามช่วงเวลาที่เลือก")
+        .addSubcommand(sub => sub.setName("setup").setDescription("ตั้งห้อง ข้อความ และช่วงเวลาส่งอัตโนมัติ")
             .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งข้อความ").addChannelTypes(ChannelType.GuildText).setRequired(true))
-            .addStringOption(o => o.setName("message").setDescription("ข้อความที่จะส่งทุกชั่วโมง").setRequired(true)))
+            .addStringOption(o => o.setName("message").setDescription("ข้อความที่จะส่งซ้ำ").setRequired(true))
+            .addIntegerOption(o => o.setName("minutes").setDescription("ส่งซ้ำทุกกี่นาที เช่น 120 = 2 ชั่วโมง").setMinValue(1).setMaxValue(10080).setRequired(true)))
         .addSubcommand(sub => sub.setName("stop").setDescription("ปิดการส่งข้อความอัตโนมัติ"))
         .addSubcommand(sub => sub.setName("status").setDescription("ตรวจสอบการตั้งค่าข้อความอัตโนมัติ")),
     new SlashCommandBuilder()
@@ -149,8 +150,9 @@ function startAutoPost(guildId) {
             autoPostTimers.delete(guildId);
             return;
         }
+        const intervalMinutes = Math.min(10080, Math.max(1, Number(current.intervalMinutes) || 60));
         const lastSentAt = Number(current.lastSentAt || Date.now());
-        if (Date.now() - lastSentAt < 60 * 60 * 1000) return;
+        if (Date.now() - lastSentAt < intervalMinutes * 60 * 1000) return;
 
         try {
             const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId);
@@ -422,12 +424,15 @@ client.on("interactionCreate", async interaction => {
         if (sub === "setup") {
             const channel = interaction.options.getChannel("channel", true);
             const message = interaction.options.getString("message", true).trim();
+            const intervalMinutes = interaction.options.getInteger("minutes", true);
             if (!message) return interaction.reply({ content: "❌ กรุณาระบุข้อความ", ephemeral: true });
+            if (intervalMinutes < 1 || intervalMinutes > 10080) return interaction.reply({ content: "❌ ตั้งเวลาได้ตั้งแต่ 1 ถึง 10080 นาที (7 วัน)", ephemeral: true });
 
             config[interaction.guild.id].autopost = {
                 enabled: true,
                 channelId: channel.id,
                 message,
+                intervalMinutes,
                 lastSentAt: Date.now()
             };
             saveConfig(config);
