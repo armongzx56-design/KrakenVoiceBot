@@ -58,6 +58,13 @@ const commands = [
         .addStringOption(o => o.setName("message").setDescription("ข้อความประกาศ").setRequired(true))
         .addStringOption(o => o.setName("title").setDescription("หัวข้อประกาศ").setRequired(false)),
     new SlashCommandBuilder()
+        .setName("autopost").setDescription("ตั้งข้อความส่งอัตโนมัติทุก 1 ชั่วโมง")
+        .addSubcommand(sub => sub.setName("setup").setDescription("ตั้งห้องและข้อความอัตโนมัติ")
+            .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งข้อความ").addChannelTypes(ChannelType.GuildText).setRequired(true))
+            .addStringOption(o => o.setName("message").setDescription("ข้อความที่จะส่งทุกชั่วโมง").setRequired(true)))
+        .addSubcommand(sub => sub.setName("stop").setDescription("ปิดการส่งข้อความอัตโนมัติ"))
+        .addSubcommand(sub => sub.setName("status").setDescription("ตรวจสอบการตั้งค่าข้อความอัตโนมัติ")),
+    new SlashCommandBuilder()
         .setName("stats")
         .setDescription("ดูสถานะและสถิติของบอท"),
     new SlashCommandBuilder()
@@ -122,6 +129,54 @@ function updateMemberActivity(guild) {
         type: ActivityType.Watching
     });
     console.log(`[MEMBERS] ${guild.name}: ${memberCount} Members`);
+}
+
+const autoPostTimers = new Map();
+
+function startAutoPost(guildId) {
+    const previous = autoPostTimers.get(guildId);
+    if (previous) clearInterval(previous);
+    autoPostTimers.delete(guildId);
+
+    const setting = config[guildId]?.autopost;
+    if (!setting?.enabled || !setting.channelId || !setting.message) return;
+
+    // ส่งครั้งแรกหลังตั้งค่า/หลังข้อความล่าสุดครบ 1 ชั่วโมง
+    const timer = setInterval(async () => {
+        const current = config[guildId]?.autopost;
+        if (!current?.enabled) {
+            clearInterval(timer);
+            autoPostTimers.delete(guildId);
+            return;
+        }
+        const lastSentAt = Number(current.lastSentAt || Date.now());
+        if (Date.now() - lastSentAt < 60 * 60 * 1000) return;
+
+        try {
+            const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId);
+            const channel = guild.channels.cache.get(current.channelId) || await guild.channels.fetch(current.channelId);
+            if (!channel || !channel.isTextBased() || !channel.send) {
+                console.log(`[AUTOPOST] Invalid text channel for guild ${guildId}`);
+                return;
+            }
+            await channel.send({
+                content: current.message,
+                allowedMentions: { parse: [] }
+            });
+            current.lastSentAt = Date.now();
+            saveConfig(config);
+            console.log(`[AUTOPOST] Sent to ${guild.name} / #${channel.name}`);
+        } catch (error) {
+            console.log(`[AUTOPOST ERROR] ${guildId}: ${error.message}`);
+        }
+    }, 30 * 1000);
+    autoPostTimers.set(guildId, timer);
+}
+
+function startConfiguredAutoPosts() {
+    for (const [guildId, settings] of Object.entries(config)) {
+        if (settings?.autopost?.enabled) startAutoPost(guildId);
+    }
 }
 
 function formatUptime(ms) {
@@ -270,6 +325,8 @@ client.once("clientReady", async () => {
         console.log("[COMMANDS ERROR]", error.message);
     });
 
+    startConfiguredAutoPosts();
+
     startRobloxUpdates(client, config, saveConfig);
 });
 
@@ -353,6 +410,52 @@ client.on("interactionCreate", async interaction => {
 
         await interaction.reply({ embeds: [embed] });
         return;
+    }
+
+    if (interaction.commandName === "autopost") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+            return interaction.reply({ content: "❌ ต้องมีสิทธิ์ Manage Server", ephemeral: true });
+        }
+        const sub = interaction.options.getSubcommand();
+        config[interaction.guild.id] ??= {};
+
+        if (sub === "setup") {
+            const channel = interaction.options.getChannel("channel", true);
+            const message = interaction.options.getString("message", true).trim();
+            if (!message) return interaction.reply({ content: "❌ กรุณาระบุข้อความ", ephemeral: true });
+
+            config[interaction.guild.id].autopost = {
+                enabled: true,
+                channelId: channel.id,
+                message,
+                lastSentAt: Date.now()
+            };
+            saveConfig(config);
+            startAutoPost(interaction.guild.id);
+            return interaction.reply({
+                content: "✅ ตั้งข้อความอัตโนมัติสำเร็จแล้ว\n📍 ห้อง: " + channel + "\n⏰ จะส่งครั้งแรกใน 1 ชั่วโมง และส่งซ้ำทุก 1 ชั่วโมง\n🛑 ใช้ `/autopost stop` เพื่อปิด",
+                ephemeral: true,
+                allowedMentions: { parse: [] }
+            });
+        }
+
+        if (sub === "stop") {
+            const timer = autoPostTimers.get(interaction.guild.id);
+            if (timer) clearInterval(timer);
+            autoPostTimers.delete(interaction.guild.id);
+            if (config[interaction.guild.id].autopost) config[interaction.guild.id].autopost.enabled = false;
+            saveConfig(config);
+            return interaction.reply({ content: "🛑 ปิดข้อความอัตโนมัติแล้ว", ephemeral: true });
+        }
+
+        const setting = config[interaction.guild.id]?.autopost;
+        if (!setting?.enabled) {
+            return interaction.reply({ content: "ℹ️ ยังไม่ได้เปิดใช้ ใช้ `/autopost setup` เพื่อตั้งค่า", ephemeral: true });
+        }
+        return interaction.reply({
+            content: "✅ เปิดใช้งานอยู่\n📍 ห้อง: <#" + setting.channelId + ">\n⏰ ส่งทุก 1 ชั่วโมง",
+            ephemeral: true
+        });
     }
 
     if (interaction.commandName === "status") {
