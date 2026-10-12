@@ -123,28 +123,51 @@ const DEFAULT_ALLOWED_GUILD_IDS = ["1550132569432137903", "1528076742994952202",
 const DEFAULT_VOICE_CHANNEL_ID = "1550132569985777670";
 
 const trackedMemberCounts = new Map();
+const memberRefreshTimers = new Map();
+
+function publishMemberCount(guild, memberCount) {
+    if (!guild || guild.id !== PRIMARY_GUILD_ID || !client.user) return;
+    const count = Math.max(0, Number(memberCount) || 0);
+    trackedMemberCounts.set(guild.id, count);
+    client.user.setActivity(`${count} Members`, {
+        type: ActivityType.Watching
+    });
+    console.log(`[MEMBERS] ${guild.name}: ${count} Members`);
+}
+
+// Fetch the full member list instead of trusting a possibly stale gateway cache.
+// Requires Server Members Intent to be enabled in the Discord Developer Portal.
+async function refreshMemberActivity(guild) {
+    if (!guild || guild.id !== PRIMARY_GUILD_ID || !client.user) return;
+    try {
+        const members = await guild.members.fetch({ force: true });
+        publishMemberCount(guild, members.size);
+    } catch (error) {
+        console.log(`[MEMBERS REFRESH ERROR] ${guild.name}: ${error.message}`);
+        // Keep the last known count if Discord refuses the full member fetch.
+        if (!trackedMemberCounts.has(guild.id)) publishMemberCount(guild, guild.memberCount);
+    }
+}
 
 function updateMemberActivity(guild, delta = null) {
     if (!guild || guild.id !== PRIMARY_GUILD_ID || !client.user) return;
-
-    let memberCount;
     if (delta === null) {
-        // Resync the baseline on startup; gateway add/remove events adjust it below.
-        memberCount = guild.memberCount;
-    } else {
-        // Discord.js may expose the old count during member-remove events.
-        // Keep our own count and apply exactly one +1/-1 per gateway event.
-        const previous = trackedMemberCounts.has(guild.id)
-            ? trackedMemberCounts.get(guild.id)
-            : Math.max(0, guild.memberCount - delta);
-        memberCount = Math.max(0, previous + delta);
+        void refreshMemberActivity(guild);
+        return;
     }
-    trackedMemberCounts.set(guild.id, memberCount);
+    const previous = trackedMemberCounts.has(guild.id)
+        ? trackedMemberCounts.get(guild.id)
+        : guild.memberCount;
+    publishMemberCount(guild, previous + delta);
+}
 
-    client.user.setActivity(`${memberCount} Members`, {
-        type: ActivityType.Watching
-    });
-    console.log(`[MEMBERS] ${guild.name}: ${memberCount} Members`);
+// Periodically reconcile missed events and stale counts against Discord's full member list.
+function startMemberCountRefresh(guild) {
+    if (!guild || guild.id !== PRIMARY_GUILD_ID) return;
+    const oldTimer = memberRefreshTimers.get(guild.id);
+    if (oldTimer) clearInterval(oldTimer);
+    const timer = setInterval(() => void refreshMemberActivity(guild), 10 * 60 * 1000);
+    memberRefreshTimers.set(guild.id, timer);
 }
 
 const autoPostTimers = new Map();
@@ -332,7 +355,10 @@ client.once("clientReady", async () => {
     // Do NOT use GUILD_ID here because it may point to another bot/server.
     const memberCountGuildId = PRIMARY_GUILD_ID;
     const memberCountGuild = client.guilds.cache.get(memberCountGuildId);
-    if (memberCountGuild) updateMemberActivity(memberCountGuild);
+    if (memberCountGuild) {
+        await refreshMemberActivity(memberCountGuild);
+        startMemberCountRefresh(memberCountGuild);
+    }
     connectConfiguredVoices().catch(error => {
         console.log("[VOICE START ERROR]", error.message);
     });
