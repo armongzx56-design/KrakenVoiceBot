@@ -81,7 +81,8 @@ const commands = [
         .addSubcommand(s => s.setName("setup").setDescription("ตั้ง Ticket Panel")
             .addChannelOption(o => o.setName("channel").setDescription("ห้อง Panel").addChannelTypes(ChannelType.GuildText).setRequired(true))
             .addChannelOption(o => o.setName("category").setDescription("หมวดหมู่ Ticket").addChannelTypes(ChannelType.GuildCategory))
-            .addRoleOption(o => o.setName("staff").setDescription("ยศทีมงาน")))
+            .addRoleOption(o => o.setName("staff").setDescription("ยศทีมงาน"))
+            .addChannelOption(o => o.setName("notify").setDescription("ห้องแจ้งเตือนทีมงานเมื่อมี Ticket ใหม่").addChannelTypes(ChannelType.GuildText)))
         .addSubcommand(s => s.setName("panel").setDescription("ส่ง Panel ใหม่")),
     new SlashCommandBuilder()
         .setName("247").setDescription("ให้บอทอยู่ในห้องเสียง 24/7")
@@ -375,107 +376,78 @@ client.once("clientReady", async () => {
 });
 
 const TICKET_TYPES = {
-    support: { label: "สอบถามทั่วไป", emoji: "💬", description: "สอบถามข้อมูลและขอความช่วยเหลือ" },
-    purchase: { label: "แจ้งปัญหาการซื้อขาย", emoji: "🛒", description: "แจ้งปัญหาการสั่งซื้อ เติมเงิน หรือชำระเงิน" },
-    report: { label: "แจ้งผู้เล่น / ร้องเรียน", emoji: "📢", description: "แจ้งเรื่องร้องเรียนพร้อมหลักฐาน" },
-    bug: { label: "แจ้งบั๊ก / ปัญหาระบบ", emoji: "🐛", description: "รายงานบั๊กหรือระบบทำงานผิดปกติ" }
+    support: { label: "ติดต่อสอบถาม", emoji: "💬" },
+    purchase: { label: "ซื้อขาย / เติมเงิน", emoji: "🛒" },
+    report: { label: "แจ้งเรื่องร้องเรียน", emoji: "📢" },
+    bug: { label: "แจ้งบั๊ก / ปัญหาระบบ", emoji: "🐛" }
 };
-
+const TICKET_SUBTYPES = {
+    support: [{id:"general",label:"สอบถามทั่วไป",emoji:"💬"},{id:"server",label:"สอบถามเกี่ยวกับเซิร์ฟเวอร์",emoji:"🏠"},{id:"other",label:"เรื่องอื่น ๆ",emoji:"❔"}],
+    purchase: [{id:"order",label:"สอบถามคำสั่งซื้อ",emoji:"🛒"},{id:"payment",label:"แจ้งปัญหาการชำระเงิน",emoji:"💳"},{id:"product",label:"ปัญหาสินค้า / บริการ",emoji:"📦"}],
+    report: [{id:"player",label:"แจ้งผู้เล่น",emoji:"👤"},{id:"staff",label:"ร้องเรียนทีมงาน",emoji:"🛡️"},{id:"other",label:"ร้องเรียนเรื่องอื่น",emoji:"📢"}],
+    bug: [{id:"technical",label:"ปัญหาทางเทคนิค",emoji:"⚙️"},{id:"error",label:"พบข้อผิดพลาด / บั๊ก",emoji:"🐛"},{id:"other",label:"ปัญหาอื่น ๆ",emoji:"❔"}]
+};
 async function sendTicketPanel(channel) {
-    const embed = new EmbedBuilder()
-        .setColor(0x5865F2)
-        .setTitle("🎫 KRAKEN SUPPORT CENTER")
-        .setDescription("**ศูนย์ช่วยเหลือ Kraken Community**\nเลือกหัวข้อที่ต้องการติดต่อจากเมนูด้านล่าง ระบบจะสร้างห้องส่วนตัวระหว่างคุณกับทีมงานโดยอัตโนมัติ\n\n🔒 ข้อมูลใน Ticket จะเห็นได้เฉพาะคุณและทีมงาน")
-        .addFields(
-            { name: "💬 สอบถามทั่วไป", value: "สอบถามข้อมูลและขอความช่วยเหลือ", inline: true },
-            { name: "🛒 ซื้อขาย / เติมเงิน", value: "แจ้งปัญหาการสั่งซื้อหรือชำระเงิน", inline: true },
-            { name: "📢 แจ้งเรื่องร้องเรียน", value: "แจ้งผู้เล่นหรือร้องเรียนทีมงาน", inline: true },
-            { name: "🐛 แจ้งบั๊ก", value: "แจ้งปัญหาและข้อผิดพลาดของระบบ", inline: true }
-        )
-        .setFooter({ text: "Kraken Community • ระบบช่วยเหลืออัตโนมัติ" });
-    const row = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-            .setCustomId("ticket_category")
-            .setPlaceholder("📩 เลือกประเภท Ticket ที่ต้องการเปิด")
-            .addOptions(
-                Object.entries(TICKET_TYPES).map(([value, item]) => ({
-                    label: item.label,
-                    value,
-                    description: item.description,
-                    emoji: item.emoji
-                }))
-            )
-    );
-    await channel.send({ embeds: [embed], components: [row] });
-}
-
-async function createTicket(interaction, ticketType) {
-    const guild = interaction.guild;
-    const type = TICKET_TYPES[ticketType];
-    if (!guild || !type) {
-        return interaction.reply({ content: "❌ ไม่พบประเภท Ticket ที่เลือก กรุณาลองใหม่อีกครั้ง", ephemeral: true });
+    const embed=new EmbedBuilder().setColor(0x5865F2).setTitle("🎫 KRAKEN SUPPORT CENTER").setDescription("**ศูนย์ช่วยเหลือ Kraken Community**\nเลือกหมวดหมู่ จากนั้นเลือกหัวข้อย่อย ระบบจะเปิดห้อง Ticket ส่วนตัวให้โดยอัตโนมัติ\n\n🔒 ข้อมูลเห็นได้เฉพาะคุณและทีมงาน");
+    const rows=[], entries=Object.entries(TICKET_TYPES);
+    for(let i=0;i<entries.length;i+=2) {
+        const row=new ActionRowBuilder();
+        for(const [key,item] of entries.slice(i,i+2)) row.addComponents(new ButtonBuilder().setCustomId("ticket_parent_"+key).setLabel(item.label).setEmoji(item.emoji).setStyle(ButtonStyle.Primary));
+        rows.push(row);
     }
-
-    await interaction.deferReply({ ephemeral: true });
+    await channel.send({embeds:[embed],components:rows});
+}
+async function createTicket(interaction,ticketType,subType) {
+    const guild=interaction.guild, type=TICKET_TYPES[ticketType], sub=TICKET_SUBTYPES[ticketType]?.find(item=>item.id===subType);
+    if(!guild||!type||!sub) return interaction.reply({content:"❌ ไม่พบหัวข้อ Ticket ที่เลือก",ephemeral:true});
+    await interaction.deferReply({ephemeral:true});
     try {
-        const existing = guild.channels.cache.find(c =>
-            c.type === ChannelType.GuildText &&
-            c.topic?.startsWith("kraken-ticket:" + interaction.user.id + ":")
-        );
-        if (existing) {
-            return interaction.editReply({ content: "🎫 คุณมี Ticket ที่ยังเปิดอยู่แล้ว: " + existing });
-        }
-
-        const tc = (config[guild.id] || {}).ticket || {};
-        const category = tc.categoryId ? guild.channels.cache.get(tc.categoryId) : null;
-        const staff = tc.staffRoleId ? guild.roles.cache.get(tc.staffRoleId) : null;
-        const overwrites = [
-            { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-            { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles, PermissionsBitField.Flags.EmbedLinks] },
-            { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.ReadMessageHistory] }
+        const existing=guild.channels.cache.find(c=>c.type===ChannelType.GuildText&&c.topic?.startsWith("kraken-ticket:"+interaction.user.id+":"));
+        if(existing) return interaction.editReply({content:"🎫 คุณมี Ticket ที่ยังเปิดอยู่แล้ว: "+existing});
+        const tc=(config[guild.id]||{}).ticket||{};
+        const n=BigInt(tc.ticketCounter||"0").toString();
+        tc.ticketCounter=(BigInt(n)+1n).toString(); config[guild.id]??={}; config[guild.id].ticket=tc; saveConfig(config);
+        const number=n.padStart(6,"0"), category=tc.categoryId?guild.channels.cache.get(tc.categoryId):null, staff=tc.staffRoleId?guild.roles.cache.get(tc.staffRoleId):null;
+        const overwrites=[
+            {id:guild.roles.everyone.id,deny:[PermissionsBitField.Flags.ViewChannel]},
+            {id:interaction.user.id,allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages,PermissionsBitField.Flags.ReadMessageHistory,PermissionsBitField.Flags.AttachFiles,PermissionsBitField.Flags.EmbedLinks]},
+            {id:client.user.id,allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages,PermissionsBitField.Flags.ManageChannels,PermissionsBitField.Flags.ReadMessageHistory]}
         ];
-        if (staff) overwrites.push({
-            id: staff.id,
-            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles]
-        });
-
-        const channel = await guild.channels.create({
-            name: "ticket-" + interaction.user.id.slice(-5),
-            type: ChannelType.GuildText,
-            parent: category?.id,
-            topic: "kraken-ticket:" + interaction.user.id + ":" + ticketType,
-            permissionOverwrites: overwrites
-        });
-        const closeRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId("ticket_close").setLabel("ปิด Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger)
-        );
-        const ticketEmbed = new EmbedBuilder()
-            .setColor(0x57F287)
-            .setTitle(type.emoji + " " + type.label)
-            .setDescription("สวัสดีคุณ <@" + interaction.user.id + "> 👋\nทีมงานจะเข้ามาดูแลโดยเร็วที่สุด\n\n**กรุณาระบุรายละเอียดให้ชัดเจน** และแนบรูปภาพหรือหลักฐานที่เกี่ยวข้องได้เลย")
-            .addFields({ name: "สถานะ", value: "🟢 เปิดใช้งาน", inline: true })
-            .setFooter({ text: "Kraken Community • Support Ticket" })
-            .setTimestamp();
-        await channel.send({
-            content: "<@" + interaction.user.id + ">" + (staff ? " <@&" + staff.id + ">" : ""),
-            embeds: [ticketEmbed],
-            components: [closeRow],
-            allowedMentions: { users: [interaction.user.id], roles: staff ? [staff.id] : [] }
-        });
-        return interaction.editReply({ content: "✅ เปิด Ticket เรียบร้อยแล้ว: " + channel });
-    } catch (error) {
-        console.log("[TICKET CREATE ERROR]", error.message);
-        return interaction.editReply({ content: "❌ เปิด Ticket ไม่สำเร็จ กรุณาตรวจสอบสิทธิ์ Manage Channels ของบอท\nรายละเอียด: " + error.message });
+        if(staff) overwrites.push({id:staff.id,allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages,PermissionsBitField.Flags.ReadMessageHistory,PermissionsBitField.Flags.AttachFiles]});
+        const channel=await guild.channels.create({name:"ticket-"+number,type:ChannelType.GuildText,parent:category?.id,topic:"kraken-ticket:"+interaction.user.id+":"+number+":"+ticketType+":"+subType,permissionOverwrites:overwrites});
+        const closeRow=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("ticket_close").setLabel("ปิด Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger));
+        const ticketEmbed=new EmbedBuilder().setColor(0x57F287).setTitle("🎫 Ticket #"+number+" • "+type.label)
+            .setDescription("สวัสดีคุณ <@"+interaction.user.id+"> 👋\nทีมงานจะเข้ามาดูแลโดยเร็วที่สุด\n\n**หัวข้อที่เลือก:** "+sub.label+"\nกรุณาระบุรายละเอียดและแนบหลักฐานที่เกี่ยวข้อง")
+            .addFields({name:"เลขตั๋ว",value:"#"+number,inline:true},{name:"สถานะ",value:"🟢 เปิดใช้งาน",inline:true}).setTimestamp();
+        await channel.send({content:"<@"+interaction.user.id+">"+(staff?" <@&"+staff.id+">":""),embeds:[ticketEmbed],components:[closeRow],allowedMentions:{users:[interaction.user.id],roles:staff?[staff.id]:[]}});
+        const notifyId=tc.notifyChannelId||tc.panelChannelId, notify=notifyId?(guild.channels.cache.get(notifyId)||await guild.channels.fetch(notifyId).catch(()=>null)):null;
+        if(notify?.isTextBased()&&notify.send) {
+            const notice=new EmbedBuilder().setColor(0x5865F2).setTitle("🔔 มี Ticket ใหม่เข้ามา!")
+                .addFields({name:"เลขตั๋ว",value:"#"+number,inline:true},{name:"ผู้เปิด Ticket",value:"<@"+interaction.user.id+">",inline:true},{name:"หมวดหมู่",value:type.label,inline:true},{name:"หัวข้อย่อย",value:sub.label,inline:true},{name:"ห้อง Ticket",value:channel.toString(),inline:true}).setTimestamp();
+            await notify.send({content:staff?"<@&"+staff.id+"> มี Ticket ใหม่รอรับเรื่อง":"มี Ticket ใหม่รอรับเรื่อง",embeds:[notice],allowedMentions:{roles:staff?[staff.id]:[]}});
+        }
+        return interaction.editReply({content:"✅ เปิด Ticket แล้ว: "+channel+"\n🎫 เลขตั๋ว: #"+number});
+    } catch(error) {
+        console.log("[TICKET CREATE ERROR]",error.message);
+        return interaction.editReply({content:"❌ เปิด Ticket ไม่สำเร็จ กรุณาตรวจสอบสิทธิ์ Manage Channels ของบอท\nรายละเอียด: "+error.message});
     }
 }
+async function showTicketSubtypes(interaction,ticketType) {
+    const type=TICKET_TYPES[ticketType], subs=TICKET_SUBTYPES[ticketType];
+    if(!type||!subs) return interaction.reply({content:"❌ ไม่พบหมวดหมู่ที่เลือก",ephemeral:true});
+    const row=new ActionRowBuilder();
+    for(const item of subs) row.addComponents(new ButtonBuilder().setCustomId("ticket_sub_"+ticketType+"_"+item.id).setLabel(item.label).setEmoji(item.emoji).setStyle(ButtonStyle.Secondary));
+    return interaction.reply({content:type.emoji+" **"+type.label+"**\nเลือกหัวข้อย่อยที่ต้องการติดต่อ:",components:[row],ephemeral:true});
+}
+
 client.on("interactionCreate", async interaction => {
-    if (interaction.isStringSelectMenu()) {
-        if (interaction.customId === "ticket_category") {
-            return createTicket(interaction, interaction.values[0]);
-        }
-        return;
-    }
     if (interaction.isButton()) {
+        if (interaction.customId.startsWith("ticket_parent_")) return showTicketSubtypes(interaction,interaction.customId.slice("ticket_parent_".length));
+        if (interaction.customId.startsWith("ticket_sub_")) {
+            const parts=interaction.customId.slice("ticket_sub_".length).split("_");
+            const subType=parts.pop(), ticketType=parts.join("_");
+            return createTicket(interaction,ticketType,subType);
+        }
         if (interaction.customId === "ticket_close") {
             const ownerId = interaction.channel?.topic?.split(":")[1];
             const staffRoleId = config[interaction.guildId]?.ticket?.staffRoleId;
@@ -588,8 +560,8 @@ client.on("interactionCreate", async interaction => {
         if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
         const sub=interaction.options.getSubcommand();
         if (sub === "setup") {
-            const ch=interaction.options.getChannel("channel",true), cat=interaction.options.getChannel("category"), role=interaction.options.getRole("staff");
-            config[interaction.guild.id] ??= {}; config[interaction.guild.id].ticket={panelChannelId:ch.id,categoryId:cat?.id || null,staffRoleId:role?.id || null}; saveConfig(config);
+            const ch=interaction.options.getChannel("channel",true), cat=interaction.options.getChannel("category"), role=interaction.options.getRole("staff"), notify=interaction.options.getChannel("notify");
+            config[interaction.guild.id] ??= {}; const previousTicket=config[interaction.guild.id].ticket || {}; config[interaction.guild.id].ticket={...previousTicket,panelChannelId:ch.id,categoryId:cat?.id || null,staffRoleId:role?.id || null,notifyChannelId:notify?.id || previousTicket.notifyChannelId || null}; saveConfig(config);
             await interaction.deferReply({ephemeral:true});
             try {
                 await sendTicketPanel(ch);
