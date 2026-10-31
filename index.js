@@ -10,6 +10,7 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
+    StringSelectMenuBuilder,
     PermissionsBitField
 } = require("discord.js");
 
@@ -373,49 +374,119 @@ client.once("clientReady", async () => {
     startRobloxUpdates(client, config, saveConfig);
 });
 
+const TICKET_TYPES = {
+    support: { label: "สอบถามทั่วไป", emoji: "💬", description: "สอบถามข้อมูลและขอความช่วยเหลือ" },
+    purchase: { label: "แจ้งปัญหาการซื้อขาย", emoji: "🛒", description: "แจ้งปัญหาการสั่งซื้อ เติมเงิน หรือชำระเงิน" },
+    report: { label: "แจ้งผู้เล่น / ร้องเรียน", emoji: "📢", description: "แจ้งเรื่องร้องเรียนพร้อมหลักฐาน" },
+    bug: { label: "แจ้งบั๊ก / ปัญหาระบบ", emoji: "🐛", description: "รายงานบั๊กหรือระบบทำงานผิดปกติ" }
+};
+
 async function sendTicketPanel(channel) {
-    const embed = new EmbedBuilder().setColor(0x5865F2).setTitle("🎫 Kraken Support")
-        .setDescription("กดปุ่มด้านล่างเพื่อเปิด Ticket ส่วนตัวกับทีมงาน")
+    const embed = new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle("🎫 KRAKEN SUPPORT CENTER")
+        .setDescription("**ศูนย์ช่วยเหลือ Kraken Community**\nเลือกหัวข้อที่ต้องการติดต่อจากเมนูด้านล่าง ระบบจะสร้างห้องส่วนตัวระหว่างคุณกับทีมงานโดยอัตโนมัติ\n\n🔒 ข้อมูลใน Ticket จะเห็นได้เฉพาะคุณและทีมงาน")
         .addFields(
-            {name:"🛠️ Support",value:"สอบถามหรือขอความช่วยเหลือ",inline:true},
-            {name:"🐛 Bug Report",value:"แจ้งบั๊กหรือปัญหา",inline:true},
-            {name:"💡 Suggestion",value:"เสนอแนะระบบ",inline:true}
-        ).setFooter({text:"Kraken Community • Support"});
+            { name: "💬 สอบถามทั่วไป", value: "สอบถามข้อมูลและขอความช่วยเหลือ", inline: true },
+            { name: "🛒 ซื้อขาย / เติมเงิน", value: "แจ้งปัญหาการสั่งซื้อหรือชำระเงิน", inline: true },
+            { name: "📢 แจ้งเรื่องร้องเรียน", value: "แจ้งผู้เล่นหรือร้องเรียนทีมงาน", inline: true },
+            { name: "🐛 แจ้งบั๊ก", value: "แจ้งปัญหาและข้อผิดพลาดของระบบ", inline: true }
+        )
+        .setFooter({ text: "Kraken Community • ระบบช่วยเหลืออัตโนมัติ" });
     const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("ticket_open").setLabel("เปิด Ticket").setEmoji("🎫").setStyle(ButtonStyle.Primary)
+        new StringSelectMenuBuilder()
+            .setCustomId("ticket_category")
+            .setPlaceholder("📩 เลือกประเภท Ticket ที่ต้องการเปิด")
+            .addOptions(
+                Object.entries(TICKET_TYPES).map(([value, item]) => ({
+                    label: item.label,
+                    value,
+                    description: item.description,
+                    emoji: item.emoji
+                }))
+            )
     );
-    await channel.send({embeds:[embed],components:[row]});
+    await channel.send({ embeds: [embed], components: [row] });
 }
-async function createTicket(interaction) {
+
+async function createTicket(interaction, ticketType) {
     const guild = interaction.guild;
-    const existing = guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.topic === "kraken-ticket:" + interaction.user.id);
-    if (existing) return interaction.reply({content:"🎫 มึงมี Ticket เปิดอยู่แล้ว: " + existing,ephemeral:true});
-    const tc = (config[guild.id] || {}).ticket || {};
-    const category = tc.categoryId ? guild.channels.cache.get(tc.categoryId) : null;
-    const staff = tc.staffRoleId ? guild.roles.cache.get(tc.staffRoleId) : null;
-    const overwrites = [
-        {id:guild.roles.everyone.id,deny:[PermissionsBitField.Flags.ViewChannel]},
-        {id:interaction.user.id,allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages,PermissionsBitField.Flags.ReadMessageHistory]},
-        {id:client.user.id,allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages,PermissionsBitField.Flags.ManageChannels,PermissionsBitField.Flags.ReadMessageHistory]}
-    ];
-    if (staff) overwrites.push({id:staff.id,allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages,PermissionsBitField.Flags.ReadMessageHistory]});
-    const channel = await guild.channels.create({
-        name:"ticket-" + interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,20) || "ticket-user",
-        type:ChannelType.GuildText,parent:category ? category.id : undefined,
-        topic:"kraken-ticket:" + interaction.user.id,permissionOverwrites:overwrites
-    });
-    const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("ticket_close").setLabel("ปิด Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger));
-    await channel.send({content:"👋 <@" + interaction.user.id + ">" + (staff ? " <@&" + staff.id + ">" : ""),
-        embeds:[new EmbedBuilder().setColor(0x57F287).setTitle("🎫 Ticket เปิดแล้ว").setDescription("อธิบายปัญหาหรือสิ่งที่ต้องการได้เลย")],
-        components:[row]});
-    await interaction.reply({content:"✅ เปิด Ticket ให้แล้ว: " + channel,ephemeral:true});
+    const type = TICKET_TYPES[ticketType];
+    if (!guild || !type) {
+        return interaction.reply({ content: "❌ ไม่พบประเภท Ticket ที่เลือก กรุณาลองใหม่อีกครั้ง", ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    try {
+        const existing = guild.channels.cache.find(c =>
+            c.type === ChannelType.GuildText &&
+            c.topic?.startsWith("kraken-ticket:" + interaction.user.id + ":")
+        );
+        if (existing) {
+            return interaction.editReply({ content: "🎫 คุณมี Ticket ที่ยังเปิดอยู่แล้ว: " + existing });
+        }
+
+        const tc = (config[guild.id] || {}).ticket || {};
+        const category = tc.categoryId ? guild.channels.cache.get(tc.categoryId) : null;
+        const staff = tc.staffRoleId ? guild.roles.cache.get(tc.staffRoleId) : null;
+        const overwrites = [
+            { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+            { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles, PermissionsBitField.Flags.EmbedLinks] },
+            { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.ReadMessageHistory] }
+        ];
+        if (staff) overwrites.push({
+            id: staff.id,
+            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles]
+        });
+
+        const channel = await guild.channels.create({
+            name: "ticket-" + interaction.user.id.slice(-5),
+            type: ChannelType.GuildText,
+            parent: category?.id,
+            topic: "kraken-ticket:" + interaction.user.id + ":" + ticketType,
+            permissionOverwrites: overwrites
+        });
+        const closeRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId("ticket_close").setLabel("ปิด Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger)
+        );
+        const ticketEmbed = new EmbedBuilder()
+            .setColor(0x57F287)
+            .setTitle(type.emoji + " " + type.label)
+            .setDescription("สวัสดีคุณ <@" + interaction.user.id + "> 👋\nทีมงานจะเข้ามาดูแลโดยเร็วที่สุด\n\n**กรุณาระบุรายละเอียดให้ชัดเจน** และแนบรูปภาพหรือหลักฐานที่เกี่ยวข้องได้เลย")
+            .addFields({ name: "สถานะ", value: "🟢 เปิดใช้งาน", inline: true })
+            .setFooter({ text: "Kraken Community • Support Ticket" })
+            .setTimestamp();
+        await channel.send({
+            content: "<@" + interaction.user.id + ">" + (staff ? " <@&" + staff.id + ">" : ""),
+            embeds: [ticketEmbed],
+            components: [closeRow],
+            allowedMentions: { users: [interaction.user.id], roles: staff ? [staff.id] : [] }
+        });
+        return interaction.editReply({ content: "✅ เปิด Ticket เรียบร้อยแล้ว: " + channel });
+    } catch (error) {
+        console.log("[TICKET CREATE ERROR]", error.message);
+        return interaction.editReply({ content: "❌ เปิด Ticket ไม่สำเร็จ กรุณาตรวจสอบสิทธิ์ Manage Channels ของบอท\nรายละเอียด: " + error.message });
+    }
 }
 client.on("interactionCreate", async interaction => {
+    if (interaction.isStringSelectMenu()) {
+        if (interaction.customId === "ticket_category") {
+            return createTicket(interaction, interaction.values[0]);
+        }
+        return;
+    }
     if (interaction.isButton()) {
-        if (interaction.customId === "ticket_open") return createTicket(interaction);
         if (interaction.customId === "ticket_close") {
-            await interaction.reply({content:"🔒 กำลังปิด Ticket...",ephemeral:true});
-            return setTimeout(() => interaction.channel && interaction.channel.delete().catch(()=>{}),1500);
+            const ownerId = interaction.channel?.topic?.split(":")[1];
+            const staffRoleId = config[interaction.guildId]?.ticket?.staffRoleId;
+            const isOwner = ownerId === interaction.user.id;
+            const isStaff = staffRoleId && interaction.member?.roles?.cache?.has(staffRoleId);
+            const canManage = interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageChannels);
+            if (!isOwner && !isStaff && !canManage) {
+                return interaction.reply({ content: "❌ เฉพาะเจ้าของ Ticket หรือทีมงานเท่านั้นที่ปิดห้องนี้ได้", ephemeral: true });
+            }
+            await interaction.reply({ content: "🔒 กำลังปิด Ticket ห้องนี้จะถูกลบใน 5 วินาที", ephemeral: true });
+            return setTimeout(() => interaction.channel?.delete().catch(error => console.log("[TICKET CLOSE ERROR]", error.message)), 5000);
         }
         return;
     }
