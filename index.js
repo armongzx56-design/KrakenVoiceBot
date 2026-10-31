@@ -381,6 +381,43 @@ const TICKET_TYPES = {
     report: { label: "แจ้งเรื่องร้องเรียน", emoji: "📢" },
     bug: { label: "แจ้งบั๊ก / ปัญหาระบบ", emoji: "🐛" }
 };
+
+function escapeTranscriptHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[char]);
+}
+async function buildTicketTranscript(channel) {
+    const messages = [];
+    let before;
+    for (let page = 0; page < 50; page++) {
+        const batch = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
+        if (!batch.size) break;
+        messages.push(...batch.values());
+        before = batch.last()?.id;
+        if (batch.size < 100 || !before) break;
+    }
+    messages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+    const body = messages.map(message => {
+        const author = escapeTranscriptHtml(message.author?.tag || "Unknown");
+        const uid = escapeTranscriptHtml(message.author?.id || "");
+        const time = escapeTranscriptHtml(new Date(message.createdTimestamp).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }));
+        const content = escapeTranscriptHtml(message.content || "").replace(/\r?\n/g, "<br>");
+        const files = [...message.attachments.values()].map(file =>
+            '<p>📎 <a href="' + escapeTranscriptHtml(file.url) + '">' + escapeTranscriptHtml(file.name || "ไฟล์แนบ") + '</a></p>'
+        ).join("");
+        return '<article><b>' + author + '</b> <small>(' + uid + ') · ' + time + '</small><p>' +
+            (content || "<i>[ไม่มีข้อความ]</i>") + '</p>' + files + '</article>';
+    }).join("");
+    const html = '<!doctype html><html lang="th"><head><meta charset="utf-8"><title>Ticket Transcript</title>' +
+        '<style>body{font:14px Arial;background:#f4f5f7;padding:24px;color:#23272a}.wrap{max-width:900px;margin:auto;background:white;padding:24px;border-radius:12px}article{padding:12px 0;border-bottom:1px solid #ddd}small{color:#777}p{overflow-wrap:anywhere}a{color:#5865f2}</style>' +
+        '</head><body><main class="wrap"><h1>Kraken Ticket #' +
+        escapeTranscriptHtml(channel.topic?.split(":")[2] || "ไม่ระบุ") + '</h1><p>ห้อง: ' +
+        escapeTranscriptHtml(channel.name) + ' · ข้อความทั้งหมด ' + messages.length + '</p>' +
+        (body || "<p>ไม่มีข้อความใน Ticket</p>") + '</main></body></html>';
+    return Buffer.from(html, "utf8");
+}
+
 const TICKET_SUBTYPES = {
     support: [{id:"general",label:"สอบถามทั่วไป",emoji:"💬"},{id:"server",label:"สอบถามเกี่ยวกับเซิร์ฟเวอร์",emoji:"🏠"},{id:"other",label:"เรื่องอื่น ๆ",emoji:"❔"}],
     purchase: [{id:"order",label:"สอบถามคำสั่งซื้อ",emoji:"🛒"},{id:"payment",label:"แจ้งปัญหาการชำระเงิน",emoji:"💳"},{id:"product",label:"ปัญหาสินค้า / บริการ",emoji:"📦"}],
@@ -467,7 +504,17 @@ client.on("interactionCreate", async interaction => {
             const logChannel = logChannelId
                 ? (interaction.guild.channels.cache.get(logChannelId) || await interaction.guild.channels.fetch(logChannelId).catch(() => null))
                 : null;
+            await interaction.deferReply({ ephemeral: true });
             const closedAt = Date.now();
+            let transcriptFile = null;
+            try {
+                transcriptFile = {
+                    attachment: await buildTicketTranscript(interaction.channel),
+                    name: "Kraken-Ticket-" + ticketNumber + "-Transcript.html"
+                };
+            } catch (error) {
+                console.log("[TICKET TRANSCRIPT ERROR]", error.message);
+            }
             if (logChannel?.isTextBased() && logChannel.send) {
                 const closeLog = new EmbedBuilder()
                     .setColor(0xED4245)
@@ -479,16 +526,21 @@ client.on("interactionCreate", async interaction => {
                         { name: "หมวดหมู่", value: ticketType, inline: true },
                         { name: "หัวข้อย่อย", value: ticketSubType, inline: true },
                         { name: "ห้อง Ticket", value: interaction.channel.toString(), inline: true },
-                        { name: "เวลาปิด", value: "<t:" + Math.floor(closedAt / 1000) + ":F> (<t:" + Math.floor(closedAt / 1000) + ":R>)", inline: false }
+                        { name: "เวลาปิด", value: "<t:" + Math.floor(closedAt / 1000) + ":F> (<t:" + Math.floor(closedAt / 1000) + ":R>)", inline: false },
+                        { name: "ประวัติแชท", value: transcriptFile ? "📄 แนบไฟล์ Transcript แล้ว" : "⚠️ สร้างไฟล์ Transcript ไม่สำเร็จ", inline: false }
                     )
                     .setTimestamp(closedAt);
                 try {
-                    await logChannel.send({ embeds: [closeLog], allowedMentions: { parse: [] } });
+                    await logChannel.send({
+                        embeds: [closeLog],
+                        files: transcriptFile ? [transcriptFile] : [],
+                        allowedMentions: { parse: [] }
+                    });
                 } catch (error) {
                     console.log("[TICKET LOG ERROR]", error.message);
                 }
             }
-            await interaction.reply({ content: "🔒 กำลังปิด Ticket ห้องนี้จะถูกลบใน 5 วินาที", ephemeral: true });
+            await interaction.editReply({ content: "🔒 กำลังปิด Ticket ห้องนี้จะถูกลบใน 5 วินาที" });
             return setTimeout(() => interaction.channel?.delete().catch(error => console.log("[TICKET CLOSE ERROR]", error.message)), 5000);
         }
         return;
@@ -596,7 +648,7 @@ client.on("interactionCreate", async interaction => {
             await interaction.deferReply({ephemeral:true});
             try {
                 await sendTicketPanel(ch);
-                return interaction.editReply({content:"✅ ตั้ง Ticket สำเร็จที่ " + ch,allowedMentions:{parse:["channels"]}});
+                return interaction.editReply({content:"✅ ตั้ง Ticket สำเร็จที่ " + ch,allowedMentions:{parse:[]}});
             } catch (error) {
                 console.log("[TICKET SETUP ERROR]", error.message);
                 return interaction.editReply("❌ ตั้ง Ticket ไม่สำเร็จ: " + error.message);
@@ -706,7 +758,7 @@ client.on("interactionCreate", async interaction => {
 
             return interaction.editReply({
                 content:"✅ ส่งประกาศไปที่ <#" + channel.id + "> เรียบร้อยแล้ว",
-                allowedMentions:{parse:["channels"]}
+                allowedMentions:{parse:[]}
             });
         } catch (error) {
             console.log("[ANNOUNCE ERROR]", error.message);
