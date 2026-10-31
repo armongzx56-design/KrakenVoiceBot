@@ -423,7 +423,7 @@ async function createTicket(interaction,ticketType,subType) {
         const notifyId=tc.notifyChannelId||tc.panelChannelId, notify=notifyId?(guild.channels.cache.get(notifyId)||await guild.channels.fetch(notifyId).catch(()=>null)):null;
         if(notify?.isTextBased()&&notify.send) {
             const notice=new EmbedBuilder().setColor(0x5865F2).setTitle("🔔 มี Ticket ใหม่เข้ามา!")
-                .addFields({name:"เลขตั๋ว",value:"#"+number,inline:true},{name:"ผู้เปิด Ticket",value:"<@"+interaction.user.id+">",inline:true},{name:"หมวดหมู่",value:type.label,inline:true},{name:"หัวข้อย่อย",value:sub.label,inline:true},{name:"ห้อง Ticket",value:channel.toString(),inline:true}).setTimestamp();
+                .addFields({name:"เลขตั๋ว",value:"#"+number,inline:true},{name:"ผู้เปิด Ticket",value:"<@"+interaction.user.id+">",inline:true},{name:"หมวดหมู่",value:type.label,inline:true},{name:"หัวข้อย่อย",value:sub.label,inline:true},{name:"ห้อง Ticket",value:channel.toString(),inline:true},{name:"เวลาเปิด",value:"<t:"+Math.floor(Date.now()/1000)+":F> (<t:"+Math.floor(Date.now()/1000)+":R>)",inline:false}).setTimestamp();
             await notify.send({content:staff?"<@&"+staff.id+"> มี Ticket ใหม่รอรับเรื่อง":"มี Ticket ใหม่รอรับเรื่อง",embeds:[notice],allowedMentions:{roles:staff?[staff.id]:[]}});
         }
         return interaction.editReply({content:"✅ เปิด Ticket แล้ว: "+channel+"\n🎫 เลขตั๋ว: #"+number});
@@ -456,6 +456,37 @@ client.on("interactionCreate", async interaction => {
             const canManage = interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageChannels);
             if (!isOwner && !isStaff && !canManage) {
                 return interaction.reply({ content: "❌ เฉพาะเจ้าของ Ticket หรือทีมงานเท่านั้นที่ปิดห้องนี้ได้", ephemeral: true });
+            }
+            const topicParts = interaction.channel?.topic?.split(":") || [];
+            const ticketOwnerId = topicParts[1] || ownerId || "ไม่ระบุ";
+            const ticketNumber = topicParts[2] || "ไม่ระบุ";
+            const ticketType = TICKET_TYPES[topicParts[3]]?.label || topicParts[3] || "ไม่ระบุ";
+            const ticketSubType = TICKET_SUBTYPES[topicParts[3]]?.find(item => item.id === topicParts[4])?.label || topicParts[4] || "ไม่ระบุ";
+            const ticketConfig = config[interaction.guildId]?.ticket || {};
+            const logChannelId = ticketConfig.notifyChannelId || ticketConfig.panelChannelId;
+            const logChannel = logChannelId
+                ? (interaction.guild.channels.cache.get(logChannelId) || await interaction.guild.channels.fetch(logChannelId).catch(() => null))
+                : null;
+            const closedAt = Date.now();
+            if (logChannel?.isTextBased() && logChannel.send) {
+                const closeLog = new EmbedBuilder()
+                    .setColor(0xED4245)
+                    .setTitle("🔒 Ticket ถูกปิดแล้ว")
+                    .addFields(
+                        { name: "เลข Ticket", value: "#" + ticketNumber, inline: true },
+                        { name: "ผู้เปิด Ticket", value: ticketOwnerId === "ไม่ระบุ" ? ticketOwnerId : "<@" + ticketOwnerId + ">", inline: true },
+                        { name: "ผู้ปิด Ticket", value: "<@" + interaction.user.id + ">", inline: true },
+                        { name: "หมวดหมู่", value: ticketType, inline: true },
+                        { name: "หัวข้อย่อย", value: ticketSubType, inline: true },
+                        { name: "ห้อง Ticket", value: interaction.channel.toString(), inline: true },
+                        { name: "เวลาปิด", value: "<t:" + Math.floor(closedAt / 1000) + ":F> (<t:" + Math.floor(closedAt / 1000) + ":R>)", inline: false }
+                    )
+                    .setTimestamp(closedAt);
+                try {
+                    await logChannel.send({ embeds: [closeLog], allowedMentions: { parse: [] } });
+                } catch (error) {
+                    console.log("[TICKET LOG ERROR]", error.message);
+                }
             }
             await interaction.reply({ content: "🔒 กำลังปิด Ticket ห้องนี้จะถูกลบใน 5 วินาที", ephemeral: true });
             return setTimeout(() => interaction.channel?.delete().catch(error => console.log("[TICKET CLOSE ERROR]", error.message)), 5000);
