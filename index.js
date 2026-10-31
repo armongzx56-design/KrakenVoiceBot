@@ -406,8 +406,12 @@ async function buildTicketTranscript(channel) {
         const files = [...message.attachments.values()].map(file =>
             '<p>📎 <a href="' + escapeTranscriptHtml(file.url) + '">' + escapeTranscriptHtml(file.name || "ไฟล์แนบ") + '</a></p>'
         ).join("");
+        const embeds = message.embeds.map(embed => {
+            const details = [embed.title, embed.description, ...(embed.fields || []).map(field => field.name + ": " + field.value)].filter(Boolean).join("\n");
+            return details ? '<blockquote>' + escapeTranscriptHtml(details).replace(/\r?\n/g, "<br>") + '</blockquote>' : "";
+        }).join("");
         return '<article><b>' + author + '</b> <small>(' + uid + ') · ' + time + '</small><p>' +
-            (content || "<i>[ไม่มีข้อความ]</i>") + '</p>' + files + '</article>';
+            (content || "<i>[ไม่มีข้อความ]</i>") + '</p>' + files + embeds + '</article>';
     }).join("");
     const html = '<!doctype html><html lang="th"><head><meta charset="utf-8"><title>Ticket Transcript</title>' +
         '<style>body{font:14px Arial;background:#f4f5f7;padding:24px;color:#23272a}.wrap{max-width:900px;margin:auto;background:white;padding:24px;border-radius:12px}article{padding:12px 0;border-bottom:1px solid #ddd}small{color:#777}p{overflow-wrap:anywhere}a{color:#5865f2}</style>' +
