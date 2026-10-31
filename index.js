@@ -426,7 +426,7 @@ async function createTicket(interaction,ticketType,subType) {
                 .addFields({name:"เลขตั๋ว",value:"#"+number,inline:true},{name:"ผู้เปิด Ticket",value:"<@"+interaction.user.id+">",inline:true},{name:"หมวดหมู่",value:type.label,inline:true},{name:"หัวข้อย่อย",value:sub.label,inline:true},{name:"ห้อง Ticket",value:channel.toString(),inline:true},{name:"เวลาเปิด",value:"<t:"+Math.floor(Date.now()/1000)+":F> (<t:"+Math.floor(Date.now()/1000)+":R>)",inline:false}).setTimestamp();
             await notify.send({content:staff?"<@&"+staff.id+"> มี Ticket ใหม่รอรับเรื่อง":"มี Ticket ใหม่รอรับเรื่อง",embeds:[notice],allowedMentions:{roles:staff?[staff.id]:[]}});
         }
-        return interaction.editReply({content:"✅ เปิด Ticket แล้ว: "+channel+"\n🎫 เลขตั๋ว: #"+number});
+        return interaction.editReply({content:"✅ เปิด Ticket ให้แล้ว: "+channel,allowedMentions:{parse:[]}});
     } catch(error) {
         console.log("[TICKET CREATE ERROR]",error.message);
         return interaction.editReply({content:"❌ เปิด Ticket ไม่สำเร็จ กรุณาตรวจสอบสิทธิ์ Manage Channels ของบอท\nรายละเอียด: "+error.message});
