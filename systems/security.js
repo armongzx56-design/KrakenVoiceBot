@@ -45,7 +45,7 @@ function startSecurity(client, config, saveConfig) {
                 { name: "ช่วงเวลา", value: (windowMs / 1000) + " วินาที", inline: true }
             ]);
             // During a detected raid, temporarily timeout only newly joined human accounts.
-            if (!member.user.bot && member.moderatable) {
+            if (!member.user.bot && member.moderatable && !member.permissions.has(PermissionsBitField.Flags.Administrator) && !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
                 const seconds = Math.min(3600, Math.max(60, Number(s.raidTimeoutSeconds) || 300));
                 await member.timeout(seconds * 1000, "Kraken Anti-Raid: join burst detected").catch(() => null);
             }
@@ -54,6 +54,7 @@ function startSecurity(client, config, saveConfig) {
 
     client.on("messageCreate", async message => {
         if (!message.guild || message.author.bot || !message.member) return;
+        if (message.member.permissions.has(PermissionsBitField.Flags.ManageMessages) || message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
         const s = settingsFor(config, message.guild.id);
         if (!s.enabled || !s.antiSpam) return;
         const now = Date.now(), windowMs = Math.max(3, Number(s.spamWindowSeconds) || 6) * 1000;
