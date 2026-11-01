@@ -72,7 +72,7 @@ function startSecurity(client, config, saveConfig) {
             const seconds = Math.min(3600, Math.max(10, Number(s.spamTimeoutSeconds) || 60));
             await message.member.timeout(seconds * 1000, "Kraken Anti-Spam").catch(() => null);
         }
-        await sendLog(message.guild, config, "⚠️ ตรวจพบ Spam", "ระบบลบข้อความและพยายาม Timeout สมาชิก", 0xFEE75C, [
+        await log(message.guild, config, "⚠️ ตรวจพบ Spam", "ระบบลบข้อความและพยายาม Timeout สมาชิก", 0xFEE75C, [
             { name: "สมาชิก", value: "<@" + message.author.id + ">", inline: true },
             { name: "จำนวนข้อความ", value: String(arr.length), inline: true },
             { name: "ห้อง", value: "<#" + message.channel.id + ">", inline: true }
@@ -98,7 +98,7 @@ function startSecurity(client, config, saveConfig) {
     });
 
     client.on("guildMemberRemove", member => {
-        void log(member.guild, config, "🚪 สมาชิกออกจากเซิร์ฟเวอร์", member.user.tag + " (" + member.id + ")", 0x747F8D, [], saveConfig);
+        void log(member.guild, config, "🚪 สมาชิกออกจากเซิร์ฟเวอร์", member.user.tag + " (" + member.id + ")", 0x747F8D);
     });
 
     console.log("[SECURITY] Anti-Raid / Anti-Spam / audit logs loaded");
