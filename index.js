@@ -587,7 +587,7 @@ client.on("interactionCreate", async interaction => {
             await sendLog(interaction.guild, config, "🛡️ Moderation: " + action.toUpperCase(), result, 0x5865F2, [
                 { name: "ผู้ดำเนินการ", value: "<@" + interaction.user.id + ">", inline: true },
                 { name: "เหตุผล", value: interaction.options.getString("reason") || "ไม่ระบุเหตุผล", inline: true }
-            ]);
+            ], saveConfig);
             return interaction.editReply({ content: "✅ " + result });
         } catch (error) {
             return interaction.editReply({ content: "❌ " + error.message });
