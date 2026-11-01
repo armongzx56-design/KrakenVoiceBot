@@ -16,8 +16,12 @@ function settingsFor(config, guildId) {
     return config[guildId].security;
 }
 
-async function sendLog(guild, config, title, description, color = 0x5865F2, fields = []) {
+async function sendLog(guild, config, title, description, color = 0x5865F2, fields = [], saveConfig) {
     const s = settingsFor(config, guild.id);
+    s.logs ??= [];
+    s.logs.unshift({ title, description: String(description || "").slice(0, 500), color, createdAt: Date.now(), fields: fields.slice(0, 10).map(f => ({ name: f.name, value: String(f.value).slice(0, 900) })) });
+    s.logs = s.logs.slice(0, 200);
+    if (saveConfig) saveConfig(config);
     const id = s.logChannelId || config[guild.id]?.ticket?.notifyChannelId || config[guild.id]?.ticket?.panelChannelId;
     if (!id) return;
     const channel = guild.channels.cache.get(id) || await guild.channels.fetch(id).catch(() => null);
@@ -93,7 +97,7 @@ function startSecurity(client, config, saveConfig) {
     });
 
     client.on("guildMemberRemove", member => {
-        void sendLog(member.guild, config, "🚪 สมาชิกออกจากเซิร์ฟเวอร์", member.user.tag + " (" + member.id + ")", 0x747F8D);
+        void sendLog(member.guild, config, "🚪 สมาชิกออกจากเซิร์ฟเวอร์", member.user.tag + " (" + member.id + ")", 0x747F8D, [], saveConfig);
     });
 
     console.log("[SECURITY] Anti-Raid / Anti-Spam / audit logs loaded");
