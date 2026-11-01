@@ -661,14 +661,14 @@ client.on("interactionCreate", async interaction => {
         const text = interaction.options.getString("text",true);
         const url = interaction.options.getString("url");
         const map = {Playing:ActivityType.Playing,Watching:ActivityType.Watching,Listening:ActivityType.Listening,Competing:ActivityType.Competing,Streaming:ActivityType.Streaming};
-        if (type === "Streaming" && (!url || !/^https?:\\/\\/(www\\.)?(twitch\\.tv|youtube\\.com)\\//i.test(url))) {
+        if (type === "Streaming" && (!url || !/^https?:\/\/(www\.)?(twitch\.tv|youtube\.com)\//i.test(url))) {
             return interaction.reply({content:"❌ โหมด Streaming ต้องใส่ลิงก์ Twitch หรือ YouTube ที่ถูกต้องในช่อง url",ephemeral:true});
         }
         client.user.setPresence({activities:[{name:text,type:map[type],...(type === "Streaming" ? {url} : {})}],status:"online"});
         config[interaction.guild.id] ??= {};
         config[interaction.guild.id].status = {type,text,...(type === "Streaming" ? {url} : {})};
         saveConfig(config);
-        return interaction.reply({content:"✅ ตั้งสถานะ " + type + " " + text + " แล้ว" + (type === "Streaming" ? "\\n🔗 " + url : ""),ephemeral:true});
+        return interaction.reply({content:"✅ ตั้งสถานะ " + type + " " + text + " แล้ว" + (type === "Streaming" ? "\n🔗 " + url : ""),ephemeral:true});
     }
     if (interaction.commandName === "ticket") {
         if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
