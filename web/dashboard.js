@@ -169,7 +169,8 @@ function startDashboard({ client, config, saveConfig, formatUptime }) {
             },
             status: gc.status || null,
             ticket: gc.ticket || null,
-            roblox: gc.roblox || null
+            roblox: gc.roblox || null,
+            security: gc.security || { enabled: true, antiRaid: true, antiSpam: true, raidJoinLimit: 8, raidWindowSeconds: 10, spamMessageLimit: 5, spamWindowSeconds: 6, spamTimeoutSeconds: 60, raidTimeoutSeconds: 300, logChannelId: null }
         });
     });
 
@@ -237,6 +238,54 @@ function startDashboard({ client, config, saveConfig, formatUptime }) {
         res.json({ ok: true, message: "บันทึก Roblox Update แล้ว" });
     });
 
+    app.get("/api/guilds/:id/security", requireSession, (req, res) => {
+        const oauthGuild = req.session.guilds.find(g => g.id === req.params.id);
+        const guild = getBotGuild(req.params.id);
+        if (!oauthGuild || !hasManageGuild(oauthGuild) || !guild) return res.status(403).json({ error: "ไม่มีสิทธิ์" });
+        const sec = config[guild.id]?.security || {};
+        res.json({
+            settings: { enabled: sec.enabled !== false, antiRaid: sec.antiRaid !== false, antiSpam: sec.antiSpam !== false,
+                raidJoinLimit: sec.raidJoinLimit || 8, raidWindowSeconds: sec.raidWindowSeconds || 10,
+                spamMessageLimit: sec.spamMessageLimit || 5, spamWindowSeconds: sec.spamWindowSeconds || 6,
+                spamTimeoutSeconds: sec.spamTimeoutSeconds || 60, raidTimeoutSeconds: sec.raidTimeoutSeconds || 300,
+                logChannelId: sec.logChannelId || null },
+            logs: (sec.logs || []).slice(0, 100)
+        });
+    });
+
+    app.post("/api/guilds/:id/security", requireSession, async (req, res) => {
+        const oauthGuild = req.session.guilds.find(g => g.id === req.params.id);
+        const guild = getBotGuild(req.params.id);
+        if (!oauthGuild || !hasManageGuild(oauthGuild) || !guild) return res.status(403).json({ error: "ไม่มีสิทธิ์" });
+        const b = req.body || {};
+        const logChannelId = b.logChannelId ? String(b.logChannelId) : null;
+        if (logChannelId) {
+            const logChannel = guild.channels.cache.get(logChannelId) || await guild.channels.fetch(logChannelId).catch(() => null);
+            if (!logChannel?.isTextBased?.()) return res.status(400).json({ error: "ไม่พบห้อง Logs" });
+        }
+        config[guild.id] ??= {};
+        const old = config[guild.id].security || {};
+        config[guild.id].security = {
+            ...old, enabled: b.enabled !== false, antiRaid: b.antiRaid !== false, antiSpam: b.antiSpam !== false,
+            raidJoinLimit: Math.min(30, Math.max(3, Number(b.raidJoinLimit) || 8)),
+            raidWindowSeconds: Math.min(60, Math.max(5, Number(b.raidWindowSeconds) || 10)),
+            spamMessageLimit: Math.min(20, Math.max(3, Number(b.spamMessageLimit) || 5)),
+            spamWindowSeconds: Math.min(30, Math.max(3, Number(b.spamWindowSeconds) || 6)),
+            spamTimeoutSeconds: Math.min(3600, Math.max(10, Number(b.spamTimeoutSeconds) || 60)),
+            raidTimeoutSeconds: Math.min(3600, Math.max(60, Number(b.raidTimeoutSeconds) || 300)),
+            logChannelId
+        };
+        saveConfig(config);
+        res.json({ ok: true, message: "บันทึก Security PRO แล้ว" });
+    });
+
+    app.get("/api/guilds/:id/logs", requireSession, (req, res) => {
+        const oauthGuild = req.session.guilds.find(g => g.id === req.params.id);
+        const guild = getBotGuild(req.params.id);
+        if (!oauthGuild || !hasManageGuild(oauthGuild) || !guild) return res.status(403).json({ error: "ไม่มีสิทธิ์" });
+        res.json((config[guild.id]?.security?.logs || []).slice(0, 100));
+    });
+
     app.get("/health", (req, res) => {
         res.json({
             bot: "KrakenVoiceBot",
@@ -257,7 +306,7 @@ function renderLogin() {
 }
 
 function renderDashboard() {
-    return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kraken Control Panel</title><style>${css()}</style></head><body><div id="app"><aside><div class="brand"><span class="logo">K</span><div><b>Kraken</b><small>Control Panel</small></div></div><div class="side-title">เซิร์ฟเวอร์ของคุณ</div><select id="guildSelect"></select><nav><button data-tab="overview" class="active">⌂ ภาพรวม</button><button data-tab="status">◉ สถานะบอท</button><button data-tab="ticket">🎫 Ticket</button><button data-tab="roblox">◈ Roblox</button></nav><a class="logout" href="/logout">ออกจากระบบ</a></aside><main><header><div><span class="eyebrow">KRAKEN CONTROL</span><h1 id="pageTitle">ภาพรวม</h1></div><div id="userBox"></div></header><section id="content"></section></main></div><script>${js()}</script></body></html>`;
+    return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kraken Control Panel</title><style>${css()}</style></head><body><div id="app"><aside><div class="brand"><span class="logo">K</span><div><b>Kraken</b><small>Control Panel</small></div></div><div class="side-title">เซิร์ฟเวอร์ของคุณ</div><select id="guildSelect"></select><nav><button data-tab="overview" class="active">⌂ ภาพรวม</button><button data-tab="status">◉ สถานะบอท</button><button data-tab="ticket">🎫 Ticket</button><button data-tab="roblox">◈ Roblox</button><button data-tab="security">🛡️ Security PRO</button><button data-tab="logs">📋 Logs</button></nav><a class="logout" href="/logout">ออกจากระบบ</a></aside><main><header><div><span class="eyebrow">KRAKEN CONTROL</span><h1 id="pageTitle">ภาพรวม</h1></div><div id="userBox"></div></header><section id="content"></section></main></div><script>${js()}</script></body></html>`;
 }
 
 function css() {
@@ -272,7 +321,7 @@ const $=s=>document.querySelector(s);
 async function api(url,opt={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...opt});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"เกิดข้อผิดพลาด");return d}
 async function init(){const me=await api("/api/me");$("#userBox").innerHTML='<div class="user"><img class="avatar" src="'+(me.user.avatar?"https://cdn.discordapp.com/avatars/"+me.user.id+"/"+me.user.avatar+".png?size=64":"")+'"><span>'+esc(me.user.username)+'</span></div>';const gs=await api("/api/guilds");const sel=$("#guildSelect");sel.innerHTML=gs.length?gs.map(g=>'<option value="'+g.id+'">'+esc(g.name)+'</option>').join(""):'<option>ไม่พบเซิร์ฟเวอร์</option>';if(gs.length){state.guild=gs[0].id;await load()}sel.onchange=async()=>{state.guild=sel.value;await load()};document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>tab(b.dataset.tab));tab("overview")}
 async function load(){state.data=await api("/api/guilds/"+state.guild);state.channels=await api("/api/guilds/"+state.guild+"/channels");renderOverview()}
-function tab(name){document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===name));$("#pageTitle").textContent={overview:"ภาพรวม",status:"สถานะบอท",ticket:"Ticket",roblox:"Roblox"}[name];({overview:renderOverview,status:renderStatus,ticket:renderTicket,roblox:renderRoblox}[name])()}
+function tab(name){document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===name));$("#pageTitle").textContent={overview:"ภาพรวม",status:"สถานะบอท",ticket:"Ticket",roblox:"Roblox",security:"Security PRO",logs:"Logs"}[name];({overview:renderOverview,status:renderStatus,ticket:renderTicket,roblox:renderRoblox,security:renderSecurity,logs:renderLogs}[name])()}
 function renderOverview(){const d=state.data||{};$("#content").innerHTML='<div class="grid"><div class="panel"><h2>🟢 บอท</h2><div class="value">'+(d.bot?.online?"ออนไลน์":"กำลังเริ่ม")+'</div><p>KrakenVoiceBot พร้อมรับคำสั่ง</p></div><div class="panel"><h2>🎫 Ticket</h2><div class="value">'+(d.ticket?"เปิดใช้งาน":"ยังไม่ตั้งค่า")+'</div><p>ระบบเปิด Ticket สำหรับสมาชิก</p></div><div class="panel"><h2>◈ Roblox</h2><div class="value">'+(d.roblox?.enabled?"เปิด":"ปิด")+'</div><p>แจ้งเตือนประกาศ Roblox</p></div></div><div class="panel" style="margin-top:14px"><h2>เซิร์ฟเวอร์</h2><p>'+esc(d.guild?.name||"")+' • สมาชิก '+(d.guild?.memberCount||0)+' คน</p></div>'}
 function renderStatus(){const s=state.data?.status||{};$("#content").innerHTML='<div class="panel form"><div><h2>◉ ตั้งสถานะบอท</h2><p>สถานะจะแสดงบน Discord ของบอท</p></div><div class="field"><label>ประเภท</label><select id="stype"><option '+(s.type==="Playing"?"selected":"")+' >Playing</option><option '+(s.type==="Watching"?"selected":"")+'>Watching</option><option '+(s.type==="Listening"?"selected":"")+'>Listening</option><option '+(s.type==="Competing"?"selected":"")+'>Competing</option></select></div><div class="field"><label>ข้อความ</label><input id="stext" maxlength="128" placeholder="เช่น Kraken Community" value="'+esc(s.text||"")+'"></div><div class="actions"><button class="save" onclick="saveStatus()">บันทึกสถานะ</button><button class="danger" onclick="clearStatus()">ล้างสถานะ</button></div><div class="hint">💡 ตั้งจากหน้าเว็บได้เลย ไม่ต้องใช้คำสั่ง Discord</div></div>'}
 async function saveStatus(){try{await api("/api/guilds/"+state.guild+"/status",{method:"POST",body:JSON.stringify({type:$("#stype").value,text:$("#stext").value})});toast("บันทึกสถานะแล้ว");await load();renderStatus()}catch(e){toast(e.message)}}
@@ -284,6 +333,12 @@ function renderTicket(){const t=state.data?.ticket||{};$("#content").innerHTML='
 async function saveTicket(){try{await api("/api/guilds/"+state.guild+"/ticket",{method:"POST",body:JSON.stringify({panelChannelId:$("#tpanel").value,categoryId:$("#tcat").value||null,staffRoleId:$("#trole").value.trim()||null})});toast("บันทึก Ticket แล้ว");await load();renderTicket()}catch(e){toast(e.message)}}
 function renderRoblox(){const r=state.data?.roblox||{};$("#content").innerHTML='<div class="panel form"><div><h2>◈ Roblox Update</h2><p>ส่งประกาศใหม่จาก Roblox Developer Forum เข้า Discord อัตโนมัติทุก 5 นาที</p></div><div class="field"><label>ห้องแจ้งเตือน</label><select id="rchannel">'+opts(textChannels(),r.channelId)+'</select></div><div class="actions"><button class="save" onclick="saveRoblox()">เปิดใช้งานและบันทึก</button></div><div class="hint">แหล่งข้อมูล: Roblox Developer Forum</div></div>'}
 async function saveRoblox(){try{await api("/api/guilds/"+state.guild+"/roblox",{method:"POST",body:JSON.stringify({channelId:$("#rchannel").value})});toast("เปิด Roblox Update แล้ว");await load();renderRoblox()}catch(e){toast(e.message)}}
+
+async function renderSecurity(){try{const d=await api("/api/guilds/"+state.guild+"/security");const s=d.settings;$("#content").innerHTML='<div class="panel form"><div><h2>🛡️ Security PRO</h2><p>ป้องกัน Raid / Spam และบันทึกเหตุการณ์สำคัญ</p></div>'+toggle("เปิดระบบความปลอดภัย","secEnabled",s.enabled)+toggle("Anti-Raid","secRaid",s.antiRaid)+toggle("Anti-Spam","secSpam",s.antiSpam)+'<div class="field"><label>จำนวนสมาชิกที่เข้ามาเพื่อแจ้งเตือน Raid</label><input id="raidLimit" type="number" min="3" max="30" value="'+s.raidJoinLimit+'"></div><div class="field"><label>ช่วงเวลาตรวจจับ Raid (วินาที)</label><input id="raidWindow" type="number" min="5" max="60" value="'+s.raidWindowSeconds+'"></div><div class="field"><label>จำนวนข้อความเพื่อจับ Spam</label><input id="spamLimit" type="number" min="3" max="20" value="'+s.spamMessageLimit+'"></div><div class="field"><label>ช่วงเวลาตรวจจับ Spam (วินาที)</label><input id="spamWindow" type="number" min="3" max="30" value="'+s.spamWindowSeconds+'"></div><div class="field"><label>Timeout เมื่อ Spam (วินาที)</label><input id="spamTimeout" type="number" min="10" max="3600" value="'+s.spamTimeoutSeconds+'"></div><div class="field"><label>Timeout สมาชิกใหม่เมื่อพบ Raid (วินาที)</label><input id="raidTimeout" type="number" min="60" max="3600" value="'+s.raidTimeoutSeconds+'"></div><div class="field"><label>ห้อง Logs</label><select id="secLogChannel">'+opts(textChannels(),s.logChannelId)+'</select></div><button class="save" onclick="saveSecurity()">บันทึก Security PRO</button><p class="hint">หมายเหตุ: Anti-Raid จะ Timeout สมาชิกใหม่ที่เข้ามาระหว่างเหตุการณ์ Raid เท่านั้น</p></div>'}catch(e){toast(e.message)}}
+function toggle(label,id,value){return '<label class="field" style="display:flex;gap:10px;align-items:center"><input id="'+id+'" type="checkbox" '+(value?'checked':'')+' style="width:auto"><span>'+label+'</span></label>'}
+async function saveSecurity(){try{await api("/api/guilds/"+state.guild+"/security",{method:"POST",body:JSON.stringify({enabled:$("#secEnabled").checked,antiRaid:$("#secRaid").checked,antiSpam:$("#secSpam").checked,raidJoinLimit:$("#raidLimit").value,raidWindowSeconds:$("#raidWindow").value,spamMessageLimit:$("#spamLimit").value,spamWindowSeconds:$("#spamWindow").value,spamTimeoutSeconds:$("#spamTimeout").value,raidTimeoutSeconds:$("#raidTimeout").value,logChannelId:$("#secLogChannel").value||null})});toast("บันทึก Security PRO แล้ว")}catch(e){toast(e.message)}}
+async function renderLogs(){try{const logs=await api("/api/guilds/"+state.guild+"/logs");$("#content").innerHTML='<div class="panel"><h2>📋 Security Logs</h2><p>แสดงเหตุการณ์ล่าสุดสูงสุด 100 รายการ</p>'+(logs.length?logs.map(x=>'<div style="padding:13px 0;border-top:1px solid #252d3b"><b>'+esc(x.title)+'</b><div class="hint">'+new Date(x.createdAt).toLocaleString("th-TH")+'</div><p>'+esc(x.description)+'</p></div>').join(""):'<p>ยังไม่มี Logs</p>')+'</div>'}catch(e){toast(e.message)}}
+
 function toast(t){const x=document.createElement("div");x.className="toast";x.textContent=t;document.body.appendChild(x);setTimeout(()=>x.remove(),2600)}
 function esc(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
 init().catch(e=>{$("#content").innerHTML='<div class="panel"><h2>โหลดไม่สำเร็จ</h2><p>'+esc(e.message)+'</p></div>'});
