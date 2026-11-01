@@ -32,6 +32,7 @@ async function sendLog(guild, config, title, description, color = 0x5865F2, fiel
 }
 
 function startSecurity(client, config, saveConfig) {
+    const log = (...args) => sendLog(...args, saveConfig);
     client.on("guildMemberAdd", async member => {
         const s = settingsFor(config, member.guild.id);
         if (!s.enabled || !s.antiRaid) return;
@@ -39,7 +40,7 @@ function startSecurity(client, config, saveConfig) {
         const arr = (joinWindows.get(member.guild.id) || []).filter(t => now - t < windowMs);
         arr.push(now); joinWindows.set(member.guild.id, arr);
         if (arr.length >= Math.max(3, Number(s.raidJoinLimit) || 8)) {
-            await sendLog(member.guild, config, "🚨 ตรวจพบเหตุการณ์ Raid", "มีสมาชิกเข้ามาจำนวนมากในช่วงเวลาสั้น ๆ", 0xED4245, [
+            await log(member.guild, config, "🚨 ตรวจพบเหตุการณ์ Raid", "มีสมาชิกเข้ามาจำนวนมากในช่วงเวลาสั้น ๆ", 0xED4245, [
                 { name: "จำนวนสมาชิก", value: String(arr.length), inline: true },
                 { name: "ช่วงเวลา", value: (windowMs / 1000) + " วินาที", inline: true }
             ]);
@@ -97,7 +98,7 @@ function startSecurity(client, config, saveConfig) {
     });
 
     client.on("guildMemberRemove", member => {
-        void sendLog(member.guild, config, "🚪 สมาชิกออกจากเซิร์ฟเวอร์", member.user.tag + " (" + member.id + ")", 0x747F8D, [], saveConfig);
+        void log(member.guild, config, "🚪 สมาชิกออกจากเซิร์ฟเวอร์", member.user.tag + " (" + member.id + ")", 0x747F8D, [], saveConfig);
     });
 
     console.log("[SECURITY] Anti-Raid / Anti-Spam / audit logs loaded");
