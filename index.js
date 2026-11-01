@@ -94,7 +94,7 @@ const commands = [
         .setName("roblox").setDescription("ระบบแจ้งเตือน Roblox")
         .addSubcommand(s => s.setName("setup").setDescription("ตั้งห้องแจ้งเตือน")
             .addChannelOption(o => o.setName("channel").setDescription("ห้องข่าว").addChannelTypes(ChannelType.GuildText).setRequired(true)))
-        .addSubcommand(s => s.setName("test").setDescription("ทดสอบระบบ"))
+        .addSubcommand(s => s.setName("test").setDescription("ทดสอบระบบ")),
     new SlashCommandBuilder()
         .setName("mod").setDescription("คำสั่งจัดการสมาชิก")
         .addSubcommand(x => x.setName("warn").setDescription("เตือนสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
