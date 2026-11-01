@@ -28,7 +28,9 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
     ]
 });
 
@@ -93,6 +95,13 @@ const commands = [
         .addSubcommand(s => s.setName("setup").setDescription("ตั้งห้องแจ้งเตือน")
             .addChannelOption(o => o.setName("channel").setDescription("ห้องข่าว").addChannelTypes(ChannelType.GuildText).setRequired(true)))
         .addSubcommand(s => s.setName("test").setDescription("ทดสอบระบบ"))
+    new SlashCommandBuilder()
+        .setName("mod").setDescription("คำสั่งจัดการสมาชิก")
+        .addSubcommand(x => x.setName("warn").setDescription("เตือนสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
+        .addSubcommand(x => x.setName("timeout").setDescription("พักสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addIntegerOption(o=>o.setName("minutes").setDescription("นาที").setMinValue(1).setMaxValue(10080).setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
+        .addSubcommand(x => x.setName("kick").setDescription("เตะสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
+        .addSubcommand(x => x.setName("ban").setDescription("แบนสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
+        .addSubcommand(x => x.setName("unban").setDescription("ปลดแบนด้วย User ID").addStringOption(o=>o.setName("user_id").setDescription("Discord User ID").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false))),
 ].map(command => command.toJSON());
 // ==================== SERVER WHITELIST ====================
 function getAllowedGuildIds() {
@@ -385,6 +394,7 @@ client.once("clientReady", async () => {
     startConfiguredAutoPosts();
 
     startRobloxUpdates(client, config, saveConfig);
+    startSecurity(client, config, saveConfig);
 });
 
 const TICKET_TYPES = {
@@ -565,6 +575,23 @@ client.on("interactionCreate", async interaction => {
 
     if (!interaction.guild || !isGuildAllowed(interaction.guild.id)) {
         return interaction.reply({ content: "❌ KrakenHub ยังไม่ได้เปิดใช้งานในเซิร์ฟเวอร์นี้", ephemeral: true });
+    }
+
+    if (interaction.commandName === "mod") {
+        const action = interaction.options.getSubcommand();
+        const permission = action === "warn" ? PermissionsBitField.Flags.ModerateMembers : action === "timeout" ? PermissionsBitField.Flags.ModerateMembers : action === "kick" ? PermissionsBitField.Flags.KickMembers : PermissionsBitField.Flags.BanMembers;
+        if (!interaction.memberPermissions?.has(permission)) return interaction.reply({ content: "❌ คุณไม่มีสิทธิ์ใช้คำสั่งนี้", ephemeral: true });
+        await interaction.deferReply({ ephemeral: true });
+        try {
+            const result = await moderate(interaction, action);
+            await sendLog(interaction.guild, config, "🛡️ Moderation: " + action.toUpperCase(), result, 0x5865F2, [
+                { name: "ผู้ดำเนินการ", value: "<@" + interaction.user.id + ">", inline: true },
+                { name: "เหตุผล", value: interaction.options.getString("reason") || "ไม่ระบุเหตุผล", inline: true }
+            ]);
+            return interaction.editReply({ content: "✅ " + result });
+        } catch (error) {
+            return interaction.editReply({ content: "❌ " + error.message });
+        }
     }
 
     if (interaction.commandName === "ping") {
@@ -870,6 +897,7 @@ process.on("uncaughtException", error => {
     console.log("[UNCAUGHT EXCEPTION]", error);
 });
 
+const { startSecurity, moderate, sendLog } = require("./systems/security");
 const { startDashboard } = require("./web/dashboard");
 const { startRobloxUpdates, sendTestUpdate } = require("./systems/robloxUpdates");
 startDashboard({ client, config, saveConfig, formatUptime });
