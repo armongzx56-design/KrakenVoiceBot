@@ -83,7 +83,7 @@ function startSecurity(client, config, saveConfig) {
 
     client.on("messageDelete", async message => {
         if (!message.guild || message.author?.bot) return;
-        await sendLog(message.guild, config, "🗑️ มีข้อความถูกลบ", "ข้อความจาก " + (message.author?.tag || "ไม่ทราบผู้ใช้"), 0xED4245, [
+        await log(message.guild, config, "🗑️ มีข้อความถูกลบ", "ข้อความจาก " + (message.author?.tag || "ไม่ทราบผู้ใช้"), 0xED4245, [
             { name: "ห้อง", value: "<#" + message.channel.id + ">", inline: true },
             { name: "เนื้อหา", value: String(message.content || "[ไม่มีเนื้อหา/ไม่อยู่ในแคช]").slice(0, 900), inline: false }
         ]);
