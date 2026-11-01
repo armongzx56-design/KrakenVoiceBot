@@ -298,7 +298,7 @@ function startDashboard({ client, config, saveConfig, formatUptime }) {
 }
 
 function renderSetup() {
-    return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kraken Control Panel</title><style>${css()}</style></head><body><main class="center"><div class="card"><div class="brand"><span class="logo">K</span><div><b>Kraken</b><small>Control Panel</small></div></div><h1>ตั้งค่า Discord OAuth ก่อน</h1><p>เพิ่ม DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET และ DISCORD_REDIRECT_URI ใน Render Environment Variables แล้วรีสตาร์ตบริการ</p></div></main></body></html>`;
+    return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kraken Control Panel</title><style>${css()}</style></head><body><main class="center"><div class="card"><div class="brand"><span class="logo">K</span><div><b>Kraken</b><small>Control Panel</small></div></div><h1>ตั้งค่า Discord OAuth ก่อน</h1><p>เพิ่ม DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET และ DISCORD_REDIRECT_URI ใน Environment Variables ของ Bot-Hosting.net แล้วรีสตาร์ตบอท</p></div></main></body></html>`;
 }
 
 function renderLogin() {
