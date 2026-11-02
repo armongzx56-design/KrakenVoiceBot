@@ -48,7 +48,7 @@ function getSettings(config, guildId) {
             "👤 **Get Role** | รับยศ Buyer ประจำเซิร์ฟเวอร์\n" +
             "🔄 **Reset HWID** | รีเซ็ต HWID กรณีเปลี่ยนคอมพิวเตอร์หรือ VPS\n" +
             "📊 **Get Stats** | ตรวจสอบสถานะคีย์และวันหมดอายุการใช้งาน",
-        scriptLoader: 'loadstring(game:HttpGet("https://raw.githubusercontent.com/armongzx56-design/KrakenHub/main/KrakenHub_Loader.luau"))()',
+        scriptLoader: 'loadstring(game:HttpGet("https://is.gd/KrakenHubV2"))()',
         buyerRoleId: null,
         logChannelId: null,
         resetHwidCooldownHours: 24,
@@ -148,10 +148,19 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
             });
         }
 
-        if (keyInfo.used && keyInfo.discordId !== interaction.user.id) {
-            return interaction.editReply({
-                content: "❌ คีย์นี้ถูกใช้งานไปแล้วโดยผู้ใช้อื่น!"
-            });
+        if (keyInfo.used) {
+            if (keyInfo.discordId === interaction.user.id) {
+                return interaction.editReply({
+                    content: `ℹ️ คุณได้ทำการเปิดใช้งานคีย์นี้ไปแล้วครับ!\n🔑 **คีย์ของคุณ**: \`${keyInfo.key}\`\n💡 สามารถกดปุ่ม **Get Script** เพื่อรับโค้ดสคริปต์ หรือกด **Get Role** เพื่อรับยศได้เลยครับ`
+                });
+            } else if (keyInfo.createdBy === interaction.user.id) {
+                // ผู้สร้างคีย์ (แอดมิน) นำคีย์มาทดสอบหรือเคลมเป็นของตนเอง
+                keyInfo.discordId = interaction.user.id;
+            } else {
+                return interaction.editReply({
+                    content: "❌ คีย์นี้ถูกใช้งานไปแล้วโดยผู้ใช้อื่น! หากต้องการความช่วยเหลือกรุณาเปิด Ticket ติดต่อทีมงาน"
+                });
+            }
         }
 
         const now = Date.now();
@@ -173,8 +182,13 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
             keys[foundKeyIndex].used = true;
             keys[foundKeyIndex].discordId = interaction.user.id;
             keys[foundKeyIndex].redeemedAt = now;
-            saveJSON(KEYS_FILE, keys);
+        } else {
+            keyInfo.used = true;
+            keyInfo.discordId = interaction.user.id;
+            keyInfo.redeemedAt = now;
+            keys.push(keyInfo);
         }
+        saveJSON(KEYS_FILE, keys);
         saveJSON(USERS_FILE, users);
 
         // ให้ยศ Buyer อัตโนมัติถ้าตั้งค่าไว้
