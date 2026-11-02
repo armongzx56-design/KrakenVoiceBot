@@ -503,6 +503,41 @@ async function showTicketSubtypes(interaction,ticketType) {
     return interaction.reply({content:type.emoji+" **"+type.label+"**\nเลือกหัวข้อย่อยที่ต้องการติดต่อ:",components:[row],ephemeral:true});
 }
 
+// ==================== PAYMENT SHORTCUT ====================
+// สมาชิกพิมพ์ !โอน แล้วบอทจะลบคำสั่งและส่งรายละเอียดการชำระเงิน
+client.on("messageCreate", async message => {
+    if (message.author.bot || !message.guild || !isGuildAllowed(message.guild.id)) return;
+    if (message.content.trim() !== "!โอน") return;
+
+    try {
+        await message.delete();
+    } catch (error) {
+        console.log("[PAYMENT] ลบคำสั่ง !โอนไม่สำเร็จ:", error.message);
+    }
+
+    const paymentEmbed = new EmbedBuilder()
+        .setColor(0x168BFF)
+        .setTitle("💸 ช่องทางโอนเงิน")
+        .setDescription(
+            "**🏦 บัญชีกสิกรไทย**\\n" +
+            "เลขที่บัญชี: \`1548041194\`\\n\\n" +
+            "**💚 TrueMoney Wallet**\\n" +
+            "หมายเลข: \`0958722102\`\\n\\n" +
+            "📄 **กรุณาแนบหลักฐานการโอน (สลิป)**"
+        )
+        .setFooter({ text: "Kraken Community • Payment" })
+        .setTimestamp();
+
+    try {
+        await message.channel.send({
+            embeds: [paymentEmbed],
+            allowedMentions: { parse: [] }
+        });
+    } catch (error) {
+        console.log("[PAYMENT SEND ERROR]", error.message);
+    }
+});
+
 client.on("interactionCreate", async interaction => {
     if (interaction.isButton()) {
         if (interaction.customId.startsWith("ticket_parent_")) return showTicketSubtypes(interaction,interaction.customId.slice("ticket_parent_".length));
