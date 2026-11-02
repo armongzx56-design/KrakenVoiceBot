@@ -120,26 +120,27 @@ const commands = [
 ].map(command => command.toJSON());
 // ==================== SERVER WHITELIST ====================
 function getAllowedGuildIds() {
-    // These three servers are permanently supported.
-    // Render environment variables may add more servers, but can never remove these.
     const configured = (process.env.ALLOWED_GUILDS || process.env.GUILD_ID || "")
         .split(",").map(id => id.trim()).filter(Boolean);
     return [...new Set([...DEFAULT_ALLOWED_GUILD_IDS, ...configured])];
 }
 function isGuildAllowed(guildId) {
-    return getAllowedGuildIds().includes(guildId);
+    // หากไม่มีการระบุ ALLOWED_GUILDS เจาะจง ให้เปิดใช้งานทุกเซิร์ฟเวอร์ที่บอทอยู่
+    const allowed = getAllowedGuildIds();
+    if (!process.env.ALLOWED_GUILDS) return true;
+    return allowed.includes(guildId);
 }
 async function syncGuildCommands(guild) {
     if (!guild || !client.user) return;
     const rest = new REST({ version: "10" }).setToken(process.env.BOT_TOKEN);
     const body = isGuildAllowed(guild.id) ? commands : [];
     await rest.put(Routes.applicationGuildCommands(client.user.id, guild.id), { body });
-    console.log(`[WHITELIST] ${isGuildAllowed(guild.id) ? "ENABLED" : "DISABLED"}: ${guild.name} (${guild.id})`);
+    console.log(`[COMMANDS SYNC] ${guild.name} (${guild.id}): Registered ${body.length} commands`);
 }
 async function syncAllGuildCommands() {
     for (const guild of client.guilds.cache.values()) {
         try { await syncGuildCommands(guild); }
-        catch (error) { console.log(`[WHITELIST ERROR] ${guild.name}: ${error.message}`); }
+        catch (error) { console.log(`[COMMANDS ERROR] ${guild.name}: ${error.message}`); }
     }
 }
 
@@ -266,10 +267,15 @@ function formatUptime(ms) {
 async function registerCommands() {
     if (!client.user) return;
     const rest = new REST({ version: "10" }).setToken(process.env.BOT_TOKEN);
-    // Remove global commands; all commands are controlled per-server by the whitelist.
-    await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
+    // Register commands globally as well as per-server so they appear instantly everywhere
+    try {
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+        console.log(`[COMMANDS] Successfully registered ${commands.length} global application commands`);
+    } catch (err) {
+        console.log("[COMMANDS GLOBAL ERROR]", err.message);
+    }
     await syncAllGuildCommands();
-    console.log("[COMMANDS] Whitelist sync complete");
+    console.log("[COMMANDS] Command sync complete");
 }
 
 async function connectToVoice(guildId, onReady) {
