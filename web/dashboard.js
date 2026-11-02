@@ -52,6 +52,42 @@ function startDashboard({ client, config, saveConfig, formatUptime }) {
         return String(name || "").replace(/[<>]/g, "");
     }
 
+    // Public API for Roblox In-Game Key & Expiration Verification
+    app.get("/api/whitelist/verify", (req, res) => {
+        const key = String(req.query.key || "").trim().toUpperCase();
+        if (!key) return res.status(400).json({ valid: false, error: "Missing key" });
+
+        const { loadJSON, KEYS_FILE, USERS_FILE } = require("../systems/whitelist");
+        const keys = loadJSON(KEYS_FILE, []);
+        const users = loadJSON(USERS_FILE, {});
+
+        const foundKey = keys.find(k => k.key && k.key.toUpperCase() === key);
+        const matchedUser = Object.values(users).find(u => u.key && u.key.toUpperCase() === key);
+
+        if (!foundKey && !matchedUser) {
+            return res.json({ valid: false, error: "Key not found" });
+        }
+
+        const now = Date.now();
+        if (matchedUser && matchedUser.expiresAt && now > matchedUser.expiresAt) {
+            return res.json({ valid: false, error: "Key expired", expired: true });
+        }
+
+        const durationDays = Number(foundKey?.durationDays) || 30;
+        const expiresAt = matchedUser?.expiresAt || (foundKey?.redeemedAt ? foundKey.redeemedAt + durationDays * 86400 * 1000 : now + durationDays * 86400 * 1000);
+
+        if (now > expiresAt) {
+            return res.json({ valid: false, error: "Key expired", expired: true });
+        }
+
+        return res.json({
+            valid: true,
+            key: key,
+            expiresAt: Math.floor(expiresAt / 1000),
+            secondsLeft: Math.max(0, Math.floor((expiresAt - now) / 1000))
+        });
+    });
+
     app.get("/", (req, res) => {
         const session = sessionFrom(req);
         if (!oauthReady) {
