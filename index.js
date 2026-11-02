@@ -102,6 +102,21 @@ const commands = [
         .addSubcommand(x => x.setName("kick").setDescription("เตะสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
         .addSubcommand(x => x.setName("ban").setDescription("แบนสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
         .addSubcommand(x => x.setName("unban").setDescription("ปลดแบนด้วย User ID").addStringOption(o=>o.setName("user_id").setDescription("Discord User ID").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false))),
+    new SlashCommandBuilder()
+        .setName("whitelist").setDescription("ระบบจัดการ Whitelist / Script Panel")
+        .addSubcommand(s => s.setName("setup").setDescription("ส่ง Whitelist Panel เข้าห้องที่ต้องการ")
+            .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่ง Panel").addChannelTypes(ChannelType.GuildText).setRequired(true))
+            .addRoleOption(o => o.setName("role").setDescription("ยศ Buyer ที่จะได้รับเมื่อรีดึมคีย์").setRequired(false))
+            .addStringOption(o => o.setName("title").setDescription("หัวข้อ Embed Panel").setRequired(false))
+            .addStringOption(o => o.setName("description").setDescription("รายละเอียด Embed Panel").setRequired(false)))
+        .addSubcommand(s => s.setName("panel").setDescription("ส่ง Whitelist Panel ใหม่ลงในห้องปัจจุบัน"))
+        .addSubcommand(s => s.setName("genkey").setDescription("สร้างคีย์ใหม่สำหรับสคริปต์")
+            .addIntegerOption(o => o.setName("days").setDescription("จำนวนวันที่ใช้งานได้ (เช่น 30 หรือ 3650 สำหรับตลอดชีพ)").setRequired(true))
+            .addIntegerOption(o => o.setName("amount").setDescription("จำนวนคีย์ที่ต้องการสร้าง (1-20)").setMinValue(1).setMaxValue(20).setRequired(false)))
+        .addSubcommand(s => s.setName("role").setDescription("ตั้งค่ายศ Buyer สำหรับผู้ใช้งาน")
+            .addRoleOption(o => o.setName("role").setDescription("เลือกยศ").setRequired(true)))
+        .addSubcommand(s => s.setName("script").setDescription("ตั้งค่าข้อความ Script Loader")
+            .addStringOption(o => o.setName("code").setDescription("โค้ด loadstring หรือลิงก์").setRequired(true))),
 ].map(command => command.toJSON());
 // ==================== SERVER WHITELIST ====================
 function getAllowedGuildIds() {
@@ -538,7 +553,22 @@ client.on("messageCreate", async message => {
     }
 });
 
+const {
+    getSettings: getWhitelistSettings,
+    makeWhitelistPanel,
+    handleWhitelistInteraction,
+    loadJSON: loadWhitelistJSON,
+    saveJSON: saveWhitelistJSON,
+    KEYS_FILE: WHITELIST_KEYS_FILE
+} = require("./systems/whitelist");
+
 client.on("interactionCreate", async interaction => {
+    // Whitelist buttons and modals
+    if ((interaction.isButton() && interaction.customId.startsWith("wl_")) ||
+        (interaction.isModalSubmit() && interaction.customId.startsWith("wl_"))) {
+        return handleWhitelistInteraction(interaction, config, saveConfig);
+    }
+
     if (interaction.isButton()) {
         if (interaction.customId.startsWith("ticket_parent_")) return showTicketSubtypes(interaction,interaction.customId.slice("ticket_parent_".length));
         if (interaction.customId.startsWith("ticket_sub_")) {
@@ -903,6 +933,102 @@ client.on("interactionCreate", async interaction => {
             .setFooter({ text: "KrakenVoiceBot • 24/7" });
 
         await interaction.reply({ embeds: [embed] });
+        return;
+    }
+
+    if (interaction.commandName === "whitelist") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+            return interaction.reply({ content: "❌ ต้องมีสิทธิ์ Manage Server ในการจัดการ Whitelist", ephemeral: true });
+        }
+        const sub = interaction.options.getSubcommand();
+        const settings = getWhitelistSettings(config, interaction.guild.id);
+
+        if (sub === "setup") {
+            const ch = interaction.options.getChannel("channel", true);
+            const role = interaction.options.getRole("role");
+            const title = interaction.options.getString("title");
+            const desc = interaction.options.getString("description");
+
+            if (role) settings.buyerRoleId = role.id;
+            if (title) settings.panelTitle = title;
+            if (desc) settings.panelDesc = desc;
+            settings.panelChannelId = ch.id;
+            saveConfig(config);
+
+            await interaction.deferReply({ ephemeral: true });
+            try {
+                const panelData = makeWhitelistPanel(settings);
+                await ch.send(panelData);
+                return interaction.editReply({
+                    content: `✅ ส่ง Whitelist Panel ไปยังห้อง ${ch} สำเร็จเรียบร้อยแล้ว` + (role ? ` (ยศ Buyer: <@&${role.id}>)` : "")
+                });
+            } catch (err) {
+                console.log("[WHITELIST SETUP ERROR]", err.message);
+                return interaction.editReply("❌ ส่ง Panel ไม่สำเร็จ: " + err.message);
+            }
+        }
+
+        if (sub === "panel") {
+            await interaction.deferReply({ ephemeral: true });
+            try {
+                const panelData = makeWhitelistPanel(settings);
+                await interaction.channel.send(panelData);
+                return interaction.editReply("✅ ส่ง Whitelist Panel ลงในห้องนี้แล้ว");
+            } catch (err) {
+                return interaction.editReply("❌ เกิดข้อผิดพลาด: " + err.message);
+            }
+        }
+
+        if (sub === "genkey") {
+            const days = interaction.options.getInteger("days", true);
+            const amount = interaction.options.getInteger("amount") || 1;
+            const keys = loadWhitelistJSON(WHITELIST_KEYS_FILE, []);
+            const crypto = require("crypto");
+            const generated = [];
+
+            for (let i = 0; i < amount; i++) {
+                const rawHex = crypto.randomBytes(6).toString("hex").toUpperCase();
+                const keyStr = `KRAKEN-${rawHex.slice(0, 4)}-${rawHex.slice(4, 8)}-${rawHex.slice(8, 12)}`;
+                const keyObj = {
+                    key: keyStr,
+                    durationDays: days,
+                    createdAt: Date.now(),
+                    used: false,
+                    createdBy: interaction.user.id
+                };
+                keys.push(keyObj);
+                generated.push(keyStr);
+            }
+            saveWhitelistJSON(WHITELIST_KEYS_FILE, keys);
+
+            const daysText = days >= 3650 ? "ตลอดชีพ" : `${days} วัน`;
+            const keyListStr = generated.map(k => `• \`${k}\``).join("\n");
+
+            return interaction.reply({
+                content: `🔑 **สร้างคีย์สำเร็จ (${amount} คีย์ | อายุ ${daysText})**:\n${keyListStr}\n\n💡 สมาชิกสามารถกดปุ่ม **Redeem Key** ที่ Panel เพื่อเปิดใช้งานได้ทันที`,
+                ephemeral: true
+            });
+        }
+
+        if (sub === "role") {
+            const role = interaction.options.getRole("role", true);
+            settings.buyerRoleId = role.id;
+            saveConfig(config);
+            return interaction.reply({
+                content: `✅ ตั้งค่ายศ Buyer เป็น <@&${role.id}> เรียบร้อยแล้ว`,
+                ephemeral: true
+            });
+        }
+
+        if (sub === "script") {
+            const code = interaction.options.getString("code", true);
+            settings.scriptLoader = code;
+            saveConfig(config);
+            return interaction.reply({
+                content: `✅ บันทึก Script Loader ใหม่เรียบร้อยแล้ว`,
+                ephemeral: true
+            });
+        }
     }
 });
 
