@@ -96,6 +96,37 @@ function makeWhitelistPanel(settings) {
     return { embeds: [embed], components: [row] };
 }
 
+async function sendWhitelistLog(client, guild, settings, embed) {
+    if (!guild) return;
+    let targetChannel = null;
+
+    if (settings?.logChannelId) {
+        targetChannel = guild.channels.cache.get(settings.logChannelId) ||
+            await guild.channels.fetch(settings.logChannelId).catch(() => null);
+    }
+
+    if (!targetChannel) {
+        targetChannel = guild.channels.cache.find(c =>
+            c.isTextBased?.() && (
+                c.name.includes("key-log") ||
+                c.name.includes("whitelist-log") ||
+                c.name.includes("คีย์") ||
+                c.name.includes("log-key") ||
+                c.name === "logs" ||
+                c.name === "log"
+            )
+        );
+    }
+
+    if (targetChannel && targetChannel.isTextBased?.() && targetChannel.send) {
+        try {
+            await targetChannel.send({ embeds: [embed] });
+        } catch (err) {
+            console.log("[WHITELIST LOG ERROR]", err.message);
+        }
+    }
+}
+
 async function handleWhitelistInteraction(interaction, config, saveConfig) {
     if (!interaction.guild) return;
     const settings = getSettings(config, interaction.guildId);
@@ -204,6 +235,26 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
                 console.log("[WHITELIST ROLE ERROR]", err.message);
             }
         }
+
+        // ส่ง Log การใช้คีย์เข้าห้อง Log ใน Discord
+        const durationText = (Number(keyInfo.durationDays) || 30) >= 3650 ? "ตลอดชีพ (Lifetime)" : `${Number(keyInfo.durationDays) || 30} วัน`;
+        const logEmbed = new EmbedBuilder()
+            .setColor(0x57F287)
+            .setTitle("🔑 บันทึกการเปิดใช้งานคีย์ (Key Redeemed)")
+            .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true, size: 256 }))
+            .addFields(
+                { name: "👤 สมาชิก (User)", value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true },
+                { name: "🆔 Discord ID", value: `\`${interaction.user.id}\``, inline: true },
+                { name: "🔑 คีย์ (Key)", value: `||${keyInfo.key}||`, inline: true },
+                { name: "⏳ ระยะเวลา (Duration)", value: durationText, inline: true },
+                { name: "📅 วันหมดอายุ (Expires)", value: `<t:${Math.floor(expiresAt / 1000)}:F>\n(<t:${Math.floor(expiresAt / 1000)}:R>)`, inline: true },
+                { name: "🏷️ ยศที่ได้รับ (Role)", value: settings.buyerRoleId ? `<@&${settings.buyerRoleId}>` : "ไม่ได้ตั้งค่ายศ", inline: true },
+                { name: "💻 สถานะ HWID", value: "ยังไม่ผูกเครื่อง (จะผูกอัตโนมัติเมื่อรันในเกม)", inline: false }
+            )
+            .setFooter({ text: "KrakenHub Whitelist Security • Logger", iconURL: interaction.client?.user?.displayAvatarURL?.() })
+            .setTimestamp();
+
+        sendWhitelistLog(interaction.client, interaction.guild, settings, logEmbed).catch(() => {});
 
         const successEmbed = new EmbedBuilder()
             .setColor(0x57F287)
@@ -328,6 +379,23 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
         users[interaction.user.id] = user;
         saveJSON(USERS_FILE, users);
 
+        const availableAt = Math.floor((Date.now() + cooldownMs) / 1000);
+        const hwidLogEmbed = new EmbedBuilder()
+            .setColor(0xFEE75C)
+            .setTitle("🔄 มีการรีเซ็ต HWID (HWID Reset)")
+            .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true, size: 256 }))
+            .addFields(
+                { name: "👤 สมาชิก (User)", value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true },
+                { name: "🆔 Discord ID", value: `\`${interaction.user.id}\``, inline: true },
+                { name: "🔑 คีย์ (Key)", value: `||${user.key}||`, inline: true },
+                { name: "⏳ คูลดาวน์ครั้งถัดไป (Next Reset)", value: `<t:${availableAt}:R> (${cooldownHours} ชม.)`, inline: true },
+                { name: "💻 สถานะ HWID", value: "ปลดล็อคเครื่องเดิมแล้ว พร้อมผูกเครื่องใหม่ในเกม", inline: false }
+            )
+            .setFooter({ text: "KrakenHub Whitelist Security • HWID Logger", iconURL: interaction.client?.user?.displayAvatarURL?.() })
+            .setTimestamp();
+
+        sendWhitelistLog(interaction.client, interaction.guild, settings, hwidLogEmbed).catch(() => {});
+
         const resetEmbed = new EmbedBuilder()
             .setColor(0xFEE75C)
             .setTitle("🔄 รีเซ็ต HWID สำเร็จแล้ว!")
@@ -379,6 +447,7 @@ module.exports = {
     getSettings,
     makeWhitelistPanel,
     handleWhitelistInteraction,
+    sendWhitelistLog,
     loadJSON,
     saveJSON,
     USERS_FILE,

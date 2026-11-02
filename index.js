@@ -107,6 +107,7 @@ const commands = [
         .addSubcommand(s => s.setName("setup").setDescription("ส่ง Whitelist Panel เข้าห้องที่ต้องการ")
             .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่ง Panel").addChannelTypes(ChannelType.GuildText).setRequired(true))
             .addRoleOption(o => o.setName("role").setDescription("ยศ Buyer ที่จะได้รับเมื่อรีดึมคีย์").setRequired(false))
+            .addChannelOption(o => o.setName("log").setDescription("ห้องสำหรับบันทึก Log การใช้คีย์").addChannelTypes(ChannelType.GuildText).setRequired(false))
             .addStringOption(o => o.setName("title").setDescription("หัวข้อ Embed Panel").setRequired(false))
             .addStringOption(o => o.setName("description").setDescription("รายละเอียด Embed Panel").setRequired(false)))
         .addSubcommand(s => s.setName("panel").setDescription("ส่ง Whitelist Panel ใหม่ลงในห้องปัจจุบัน"))
@@ -115,6 +116,8 @@ const commands = [
             .addIntegerOption(o => o.setName("amount").setDescription("จำนวนคีย์ที่ต้องการสร้าง (1-20)").setMinValue(1).setMaxValue(20).setRequired(false)))
         .addSubcommand(s => s.setName("role").setDescription("ตั้งค่ายศ Buyer สำหรับผู้ใช้งาน")
             .addRoleOption(o => o.setName("role").setDescription("เลือกยศ").setRequired(true)))
+        .addSubcommand(s => s.setName("log").setDescription("ตั้งค่าห้องสำหรับบันทึก Log การใช้คีย์ / Reset HWID")
+            .addChannelOption(o => o.setName("channel").setDescription("เลือกห้องบันทึก Log").addChannelTypes(ChannelType.GuildText).setRequired(true)))
         .addSubcommand(s => s.setName("script").setDescription("ตั้งค่าข้อความ Script Loader")
             .addStringOption(o => o.setName("code").setDescription("โค้ด loadstring หรือลิงก์").setRequired(true))),
 ].map(command => command.toJSON());
@@ -267,10 +270,10 @@ function formatUptime(ms) {
 async function registerCommands() {
     if (!client.user) return;
     const rest = new REST({ version: "10" }).setToken(process.env.BOT_TOKEN);
-    // Register commands globally as well as per-server so they appear instantly everywhere
+    // Clear global application commands so they do not duplicate with guild-level commands
     try {
-        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-        console.log(`[COMMANDS] Successfully registered ${commands.length} global application commands`);
+        await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
+        console.log(`[COMMANDS] Successfully cleared global application commands to prevent duplicate entries`);
     } catch (err) {
         console.log("[COMMANDS GLOBAL ERROR]", err.message);
     }
@@ -563,6 +566,7 @@ const {
     getSettings: getWhitelistSettings,
     makeWhitelistPanel,
     handleWhitelistInteraction,
+    sendWhitelistLog,
     loadJSON: loadWhitelistJSON,
     saveJSON: saveWhitelistJSON,
     KEYS_FILE: WHITELIST_KEYS_FILE
@@ -952,10 +956,12 @@ client.on("interactionCreate", async interaction => {
         if (sub === "setup") {
             const ch = interaction.options.getChannel("channel", true);
             const role = interaction.options.getRole("role");
+            const logCh = interaction.options.getChannel("log");
             const title = interaction.options.getString("title");
             const desc = interaction.options.getString("description");
 
             if (role) settings.buyerRoleId = role.id;
+            if (logCh) settings.logChannelId = logCh.id;
             if (title) settings.panelTitle = title;
             if (desc) settings.panelDesc = desc;
             settings.panelChannelId = ch.id;
@@ -966,7 +972,7 @@ client.on("interactionCreate", async interaction => {
                 const panelData = makeWhitelistPanel(settings);
                 await ch.send(panelData);
                 return interaction.editReply({
-                    content: `✅ ส่ง Whitelist Panel ไปยังห้อง ${ch} สำเร็จเรียบร้อยแล้ว` + (role ? ` (ยศ Buyer: <@&${role.id}>)` : "")
+                    content: `✅ ส่ง Whitelist Panel ไปยังห้อง ${ch} สำเร็จเรียบร้อยแล้ว` + (role ? ` (ยศ Buyer: <@&${role.id}>)` : "") + (logCh ? ` (ห้อง Log: <#${logCh.id}>)` : "")
                 });
             } catch (err) {
                 console.log("[WHITELIST SETUP ERROR]", err.message);
@@ -1010,6 +1016,21 @@ client.on("interactionCreate", async interaction => {
             const daysText = days >= 3650 ? "ตลอดชีพ" : `${days} วัน`;
             const keyListStr = generated.map(k => `• \`${k}\``).join("\n");
 
+            // Log การสร้างคีย์ใหม่ลงในห้อง Log ของดิสคอร์ด
+            const genLogEmbed = new EmbedBuilder()
+                .setColor(0x5865F2)
+                .setTitle("✨ มีการสร้างคีย์ใหม่โดยแอดมิน (Keys Generated)")
+                .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true, size: 256 }))
+                .addFields(
+                    { name: "👑 ผู้สร้าง (Admin)", value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true },
+                    { name: "🔢 จำนวน (Amount)", value: `${amount} คีย์`, inline: true },
+                    { name: "⏳ อายุการใช้งาน (Duration)", value: daysText, inline: true }
+                )
+                .setFooter({ text: "KrakenHub Whitelist Security • Key Gen Logger" })
+                .setTimestamp();
+
+            sendWhitelistLog(client, interaction.guild, settings, genLogEmbed).catch(() => {});
+
             return interaction.reply({
                 content: `🔑 **สร้างคีย์สำเร็จ (${amount} คีย์ | อายุ ${daysText})**:\n${keyListStr}\n\n💡 สมาชิกสามารถกดปุ่ม **Redeem Key** ที่ Panel เพื่อเปิดใช้งานได้ทันที`,
                 ephemeral: true
@@ -1022,6 +1043,16 @@ client.on("interactionCreate", async interaction => {
             saveConfig(config);
             return interaction.reply({
                 content: `✅ ตั้งค่ายศ Buyer เป็น <@&${role.id}> เรียบร้อยแล้ว`,
+                ephemeral: true
+            });
+        }
+
+        if (sub === "log") {
+            const logChannel = interaction.options.getChannel("channel", true);
+            settings.logChannelId = logChannel.id;
+            saveConfig(config);
+            return interaction.reply({
+                content: `✅ ตั้งค่าห้องสำหรับบันทึก Log การใช้คีย์และรีเซ็ต HWID เป็น ${logChannel} เรียบร้อยแล้ว`,
                 ephemeral: true
             });
         }
