@@ -29,7 +29,7 @@ async function fetchVideos(channelId) {
     if (!response.ok) throw new Error("YouTube RSS ตอบกลับ HTTP " + response.status);
 
     const xml = await response.text();
-    const entries = [...xml.matchAll(/<entry>([\\s\\S]*?)<\\/entry>/g)].map(match => {
+    const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map(match => {
         const entry = match[1];
         const videoId = tag(entry, "yt:videoId");
         const title = tag(entry, "title");
