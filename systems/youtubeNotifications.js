@@ -97,14 +97,27 @@ function removeSource(config, guildId, channelId) {
 
 async function sendTestUpdate(client, config, guildId) {
     const settings = config[guildId]?.youtube;
-    if (!settings?.enabled || !settings.channelId || !settings.sources?.length) {
-        throw new Error("ยังไม่ได้ตั้งค่าระบบ ใช้ /youtube setup ก่อน");
+    if (!settings?.enabled || !settings.channelId) {
+        throw new Error("ยังไม่ได้ตั้งห้องแจ้งเตือน ใช้ /youtube setup ก่อน");
     }
 
     const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId);
     const channel = guild.channels.cache.get(settings.channelId) || await guild.channels.fetch(settings.channelId);
     if (!channel?.isTextBased() || !channel.send) {
         throw new Error("ไม่พบห้องแจ้งเตือน หรือบอทไม่มีสิทธิ์ส่งข้อความ");
+    }
+
+    // Allow testing the Discord destination even before a YouTube source is successfully added.
+    if (!settings.sources?.length) {
+        const embed = new EmbedBuilder()
+            .setColor(0xFF0000)
+            .setTitle("🧪 ทดสอบระบบแจ้งเตือน YouTube")
+            .setDescription("ส่งข้อความทดสอบสำเร็จ! ห้องแจ้งเตือนพร้อมใช้งานแล้ว\n\n⚠️ ยังไม่มีช่อง YouTube ในรายการติดตาม กรุณาใช้ /youtube add หลังแก้ไขการเชื่อมต่อ RSS")
+            .setURL("https://www.youtube.com/channel/" + "UCR3Ns6RLG9DIIPnEOqXcD-g")
+            .setFooter({ text: "Kraken Community • YouTube Notification" })
+            .setTimestamp();
+        await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+        return { test: true };
     }
 
     const videos = await fetchVideos(settings.sources[0].channelId);
