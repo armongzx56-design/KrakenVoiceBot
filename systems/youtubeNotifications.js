@@ -113,7 +113,7 @@ async function sendTestUpdate(client, config, guildId) {
             .setColor(0xFF0000)
             .setTitle("🧪 ทดสอบระบบแจ้งเตือน YouTube")
             .setDescription("ส่งข้อความทดสอบสำเร็จ! ห้องแจ้งเตือนพร้อมใช้งานแล้ว\n\n⚠️ ยังไม่มีช่อง YouTube ในรายการติดตาม กรุณาใช้ /youtube add หลังแก้ไขการเชื่อมต่อ RSS")
-            .setURL("https://www.youtube.com/channel/" + "UCR3Ns6RLG9DIIPnEOqXcD-g")
+            .setURL("https://www.youtube.com/")
             .setFooter({ text: "Kraken Community • YouTube Notification" })
             .setTimestamp();
         await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
