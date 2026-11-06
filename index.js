@@ -30,7 +30,8 @@ const client = new Client({
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildInvites
     ]
 });
 
@@ -130,6 +131,21 @@ const commands = [
             .addChannelOption(o => o.setName("channel").setDescription("เลือกห้องบันทึก Log").addChannelTypes(ChannelType.GuildText).setRequired(true)))
         .addSubcommand(s => s.setName("script").setDescription("ตั้งค่าข้อความ Script Loader")
             .addStringOption(o => o.setName("code").setDescription("โค้ด loadstring หรือลิงก์").setRequired(true))),
+    new SlashCommandBuilder()
+        .setName("setup-verify")
+        .setDescription("ตั้งค่าระบบยืนยันตัวตนรับยศ (สไตล์ Satou)")
+        .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งแผง Verify").addChannelTypes(ChannelType.GuildText).setRequired(true))
+        .addRoleOption(o => o.setName("role").setDescription("ยศที่จะได้รับเมื่อยืนยันตัวตนสำเร็จ").setRequired(true))
+        .addChannelOption(o => o.setName("log").setDescription("ห้องสำหรับส่งแจ้งเตือนการยืนยันตัวตน (#ยืนยันเสร็จ)").addChannelTypes(ChannelType.GuildText).setRequired(false))
+        .addStringOption(o => o.setName("image").setDescription("ลิงก์รูปภาพ Banner ใน Embed").setRequired(false)),
+    new SlashCommandBuilder()
+        .setName("setup-ticket")
+        .setDescription("ตั้งค่าระบบ Ticket Support (สไตล์ Satou)")
+        .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งแผงเปิด Ticket").addChannelTypes(ChannelType.GuildText).setRequired(true))
+        .addChannelOption(o => o.setName("category").setDescription("หมวดหมู่สำหรับห้อง Ticket").addChannelTypes(ChannelType.GuildCategory).setRequired(false))
+        .addRoleOption(o => o.setName("staff").setDescription("ยศทีมงานที่จะเห็น Ticket").setRequired(false))
+        .addChannelOption(o => o.setName("notify").setDescription("ห้องสำหรับบันทึก Log / Transcript").addChannelTypes(ChannelType.GuildText).setRequired(false))
+        .addStringOption(o => o.setName("image").setDescription("ลิงก์รูปภาพ Banner ใน Embed").setRequired(false)),
 ].map(command => command.toJSON());
 // ==================== SERVER WHITELIST ====================
 function getAllowedGuildIds() {
@@ -430,6 +446,7 @@ client.once("clientReady", async () => {
     startRobloxUpdates(client, config, saveConfig);
     startYouTubeNotifications(client, config, saveConfig);
     startSecurity(client, config, saveConfig);
+    startVerify(client);
 });
 
 const TICKET_TYPES = {
@@ -583,11 +600,33 @@ const {
     KEYS_FILE: WHITELIST_KEYS_FILE
 } = require("./systems/whitelist");
 
+const {
+    startVerify,
+    sendVerifyPanel,
+    handleVerifyInteraction
+} = require("./systems/verify");
+
+const {
+    sendTicketPanel: sendSatouTicketPanel,
+    handleTicketInteraction: handleSatouTicketInteraction
+} = require("./systems/ticket");
+
 client.on("interactionCreate", async interaction => {
     // Whitelist buttons and modals
     if ((interaction.isButton() && interaction.customId.startsWith("wl_")) ||
         (interaction.isModalSubmit() && interaction.customId.startsWith("wl_"))) {
         return handleWhitelistInteraction(interaction, config, saveConfig);
+    }
+
+    // Verify system interactions
+    if (interaction.isButton() && (interaction.customId === "verify_btn" || interaction.customId === "verify_why_btn")) {
+        return handleVerifyInteraction(interaction, config, saveConfig);
+    }
+
+    // Satou Ticket system interactions
+    if ((interaction.isButton() && (interaction.customId === "ticket_open_btn" || interaction.customId === "ticket_close_btn" || interaction.customId === "ticket_invite_btn")) ||
+        (interaction.isModalSubmit() && (interaction.customId === "ticket_modal_create" || interaction.customId === "ticket_modal_invite"))) {
+        return handleSatouTicketInteraction(interaction, config, saveConfig);
     }
 
     if (interaction.isButton()) {
@@ -783,6 +822,77 @@ client.on("interactionCreate", async interaction => {
         saveConfig(config);
         return interaction.reply({content:"✅ ตั้งสถานะ " + type + " " + text + " แล้ว" + (type === "Streaming" ? "\n🔗 " + url : ""),ephemeral:true});
     }
+
+    if (interaction.commandName === "setup-verify") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+            return interaction.reply({ content: "❌ ต้องมีสิทธิ์ Manage Server ในการตั้งค่า", ephemeral: true });
+        }
+        const channel = interaction.options.getChannel("channel", true);
+        const role = interaction.options.getRole("role", true);
+        const logChannel = interaction.options.getChannel("log");
+        const bannerUrl = interaction.options.getString("image");
+
+        config[interaction.guild.id] ??= {};
+        config[interaction.guild.id].verify = {
+            enabled: true,
+            panelChannelId: channel.id,
+            roleId: role.id,
+            logChannelId: logChannel?.id || null,
+            bannerUrl: bannerUrl || null
+        };
+        saveConfig(config);
+
+        await interaction.deferReply({ ephemeral: true });
+        try {
+            await sendVerifyPanel(channel, { bannerUrl });
+            return interaction.editReply({
+                content: `✅ ตั้งค่าระบบยืนยันตัวตนสำเร็จแล้ว!\n📍 ห้องส่ง Panel: ${channel}\n🏷️ ยศที่จะได้รับ: ${role}` +
+                    (logChannel ? `\n📜 ห้องบันทึก Log: ${logChannel}` : "") +
+                    (bannerUrl ? `\n🖼️ รูปแบนเนอร์: ${bannerUrl}` : "")
+            });
+        } catch (error) {
+            console.log("[SETUP-VERIFY ERROR]", error.message);
+            return interaction.editReply(`❌ ตั้งค่าไม่สำเร็จ: ${error.message}`);
+        }
+    }
+
+    if (interaction.commandName === "setup-ticket") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+            return interaction.reply({ content: "❌ ต้องมีสิทธิ์ Manage Server ในการตั้งค่า", ephemeral: true });
+        }
+        const channel = interaction.options.getChannel("channel", true);
+        const category = interaction.options.getChannel("category");
+        const staff = interaction.options.getRole("staff");
+        const notify = interaction.options.getChannel("notify");
+        const bannerUrl = interaction.options.getString("image");
+
+        config[interaction.guild.id] ??= {};
+        const previousTicket = config[interaction.guild.id].ticket || {};
+        config[interaction.guild.id].ticket = {
+            ...previousTicket,
+            panelChannelId: channel.id,
+            categoryId: category?.id || previousTicket.categoryId || null,
+            staffRoleId: staff?.id || previousTicket.staffRoleId || null,
+            notifyChannelId: notify?.id || previousTicket.notifyChannelId || null,
+            bannerUrl: bannerUrl || previousTicket.bannerUrl || null
+        };
+        saveConfig(config);
+
+        await interaction.deferReply({ ephemeral: true });
+        try {
+            await sendSatouTicketPanel(channel, { bannerUrl });
+            return interaction.editReply({
+                content: `✅ ตั้งค่าระบบ Ticket Support สไตล์ Satou สำเร็จแล้ว!\n📍 ห้องส่ง Panel: ${channel}` +
+                    (category ? `\n📂 หมวดหมู่: ${category}` : "") +
+                    (staff ? `\n👮 ยศทีมงาน: ${staff}` : "") +
+                    (notify ? `\n🔔 ห้องแจ้งเตือน/Log: ${notify}` : "")
+            });
+        } catch (error) {
+            console.log("[SETUP-TICKET ERROR]", error.message);
+            return interaction.editReply(`❌ ตั้งค่า Ticket ไม่สำเร็จ: ${error.message}`);
+        }
+    }
+
     if (interaction.commandName === "ticket") {
         if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
         const sub=interaction.options.getSubcommand();
