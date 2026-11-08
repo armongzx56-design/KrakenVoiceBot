@@ -6,7 +6,7 @@ const oauthStates = new Map();
 
 function startDashboard({ client, config, saveConfig, formatUptime }) {
     const app = express();
-    const PORT = process.env.PORT || 3000;
+    const PORT = Number(process.env.SERVER_PORT) || Number(process.env.PORT) || 26150;
 
     app.use(express.json({ limit: "32kb" }));
     app.use(express.urlencoded({ extended: false }));
@@ -55,29 +55,47 @@ function startDashboard({ client, config, saveConfig, formatUptime }) {
     // Public API for Roblox In-Game Key & Expiration Verification
     app.get("/api/whitelist/verify", (req, res) => {
         const key = String(req.query.key || "").trim().toUpperCase();
+        const hwid = String(req.query.hwid || "").trim();
         if (!key) return res.status(400).json({ valid: false, error: "Missing key" });
 
-        const { loadJSON, KEYS_FILE, USERS_FILE } = require("../systems/whitelist");
+        const { loadJSON, saveJSON, KEYS_FILE, USERS_FILE } = require("../systems/whitelist");
         const keys = loadJSON(KEYS_FILE, []);
         const users = loadJSON(USERS_FILE, {});
 
-        const foundKey = keys.find(k => k.key && k.key.toUpperCase() === key);
-        const matchedUser = Object.values(users).find(u => u.key && u.key.toUpperCase() === key);
+        const foundKeyIndex = keys.findIndex(k => k.key && k.key.toUpperCase() === key);
+        const userEntries = Object.entries(users);
+        const matchedUserPair = userEntries.find(([id, u]) => u.key && u.key.toUpperCase() === key);
+        const matchedUserId = matchedUserPair ? matchedUserPair[0] : null;
+        const matchedUser = matchedUserPair ? matchedUserPair[1] : null;
 
-        if (!foundKey && !matchedUser) {
+        if (foundKeyIndex === -1 && !matchedUser) {
             return res.json({ valid: false, error: "Key not found" });
         }
 
         const now = Date.now();
-        if (matchedUser && matchedUser.expiresAt && now > matchedUser.expiresAt) {
-            return res.json({ valid: false, error: "Key expired", expired: true });
-        }
-
+        const foundKey = foundKeyIndex !== -1 ? keys[foundKeyIndex] : null;
         const durationDays = Number(foundKey?.durationDays) || 30;
         const expiresAt = matchedUser?.expiresAt || (foundKey?.redeemedAt ? foundKey.redeemedAt + durationDays * 86400 * 1000 : now + durationDays * 86400 * 1000);
 
         if (now > expiresAt) {
             return res.json({ valid: false, error: "Key expired", expired: true });
+        }
+
+        // HWID Binding
+        if (hwid) {
+            if (matchedUser) {
+                if (!matchedUser.hwid) {
+                    matchedUser.hwid = hwid;
+                    saveJSON(USERS_FILE, users);
+                    console.log(`[WHITELIST HWID] Bound ${matchedUser.discordTag || matchedUserId} to HWID ${hwid}`);
+                } else if (matchedUser.hwid !== hwid) {
+                    return res.json({
+                        valid: false,
+                        error: "HWID mismatch. Please reset HWID in Discord bot.",
+                        hwidLocked: true
+                    });
+                }
+            }
         }
 
         return res.json({

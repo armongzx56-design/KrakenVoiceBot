@@ -17,6 +17,7 @@ function settingsFor(config, guildId) {
 }
 
 async function sendLog(guild, config, title, description, color = 0x5865F2, fields = [], saveConfig) {
+    if (!Array.isArray(fields)) fields = [];
     const s = settingsFor(config, guild.id);
     s.logs ??= [];
     s.logs.unshift({ title, description: String(description || "").slice(0, 500), color, createdAt: Date.now(), fields: fields.slice(0, 10).map(f => ({ name: f.name, value: String(f.value).slice(0, 900) })) });
@@ -32,7 +33,7 @@ async function sendLog(guild, config, title, description, color = 0x5865F2, fiel
 }
 
 function startSecurity(client, config, saveConfig) {
-    const log = (...args) => sendLog(...args, saveConfig);
+    const log = (g, c, title, desc, color = 0x5865F2, fields = []) => sendLog(g, c, title, desc, color, Array.isArray(fields) ? fields : [], saveConfig);
     client.on("guildMemberAdd", async member => {
         const s = settingsFor(config, member.guild.id);
         if (!s.enabled || !s.antiRaid) return;
