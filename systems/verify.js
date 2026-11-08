@@ -111,12 +111,73 @@ function startVerify(client) {
     }
 }
 
-function makeVerifyPanel(options = {}) {
+function resolveEmoji(client, configVal, nameCandidates, fallback) {
+    if (configVal) {
+        if (/^<(a)?:[\w~]+:\d+>$/.test(configVal)) return configVal;
+        const idMatch = String(configVal).match(/\d{15,22}/);
+        if (idMatch && client) {
+            const found = client.application?.emojis?.cache?.get(idMatch[0]) || client.emojis?.cache?.get(idMatch[0]);
+            if (found) return `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
+            return configVal;
+        }
+    }
+    if (!client) return fallback;
+    const candidates = Array.isArray(nameCandidates) ? nameCandidates : [nameCandidates];
+    if (client.application?.emojis?.cache) {
+        for (const name of candidates) {
+            const found = client.application.emojis.cache.find(e => e.name.toLowerCase() === name.toLowerCase());
+            if (found) return `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
+        }
+    }
+    if (client.emojis?.cache) {
+        for (const name of candidates) {
+            const found = client.emojis.cache.find(e => e.name.toLowerCase() === name.toLowerCase());
+            if (found) return `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
+        }
+    }
+    return fallback;
+}
+
+function resolveButtonEmoji(client, configVal, nameCandidates, fallback) {
+    if (configVal) {
+        const idMatch = String(configVal).match(/\d{15,22}/);
+        if (idMatch && client) {
+            const id = idMatch[0];
+            const found = client.application?.emojis?.cache?.get(id) || client.emojis?.cache?.get(id);
+            if (found) return found.id;
+        } else if (!/^\d+$/.test(configVal)) {
+            return configVal;
+        }
+    }
+    if (!client) return fallback;
+    const candidates = Array.isArray(nameCandidates) ? nameCandidates : [nameCandidates];
+    if (client.application?.emojis?.cache) {
+        for (const name of candidates) {
+            const found = client.application.emojis.cache.find(e => e.name.toLowerCase() === name.toLowerCase());
+            if (found) return found.id;
+        }
+    }
+    if (client.emojis?.cache) {
+        for (const name of candidates) {
+            const found = client.emojis.cache.find(e => e.name.toLowerCase() === name.toLowerCase());
+            if (found) return found.id;
+        }
+    }
+    return fallback;
+}
+
+function makeVerifyPanel(options = {}, client = null) {
+    const emojiCfg = options.emojis || {};
+    const wings = resolveEmoji(client, emojiCfg.wings, ["satou_wings", "wings", "wing", "aesthetic_wings"], "🪽");
+    const arrow = resolveEmoji(client, emojiCfg.arrow, ["satou_arrow", "arrow", "ani_arrow", "white_arrow"], "➡️");
+    const btnVerifyEmoji = resolveButtonEmoji(client, emojiCfg.btnVerify, ["satou_verify", "verify", "check", "verified"], "✔️");
+    const btnWhyEmoji = resolveButtonEmoji(client, emojiCfg.btnWhy, ["satou_alert", "alert", "warn", "exclamation", "why"], "❗");
+
     const embed = new EmbedBuilder()
         .setColor(0x2B2D31)
         .setAuthor({ name: "• Powered by Kraken Hub" })
-        .setTitle("🪽 ยืนยันตัวตนด้วยปุ่ม 🪽")
-        .setDescription("➡️ คลิกปุ่มด้านล่างเพื่อเริ่มการยืนยันตัวตนและเข้าสู่เซิร์ฟเวอร์ครับ ❕");
+        .setTitle(`${wings} ยืนยันตัวตนด้วยปุ่ม ${wings}`)
+        .setDescription(`${arrow} คลิกปุ่มด้านล่างเพื่อเริ่มการยืนยันตัวตนและเข้าสู่เซิร์ฟเวอร์ครับ ❕`);
 
     if (options.bannerUrl) {
         embed.setImage(options.bannerUrl);
@@ -126,12 +187,12 @@ function makeVerifyPanel(options = {}) {
         new ButtonBuilder()
             .setCustomId("verify_btn")
             .setLabel("ยืนยันตัวตน")
-            .setEmoji("✔️")
+            .setEmoji(btnVerifyEmoji)
             .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
             .setCustomId("verify_why_btn")
             .setLabel("ทำไมต้องยืนยันตัวตน?")
-            .setEmoji("❗")
+            .setEmoji(btnWhyEmoji)
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -139,7 +200,7 @@ function makeVerifyPanel(options = {}) {
 }
 
 async function sendVerifyPanel(channel, options = {}) {
-    const payload = makeVerifyPanel(options);
+    const payload = makeVerifyPanel(options, channel?.client);
     return await channel.send(payload);
 }
 
@@ -221,12 +282,17 @@ async function handleVerifyInteraction(interaction, config, saveConfig) {
                     uses: 1
                 };
 
+                const emojiCfg = verifyConfig.emojis || {};
+                const logTitleEmoji = resolveEmoji(interaction.client, emojiCfg.logTitle, ["satou_check", "purple_check", "verify_purple", "verify"], "🔮");
+                const logMemberEmoji = resolveEmoji(interaction.client, emojiCfg.logMember, ["satou_member", "member", "members", "user", "blue_user"], "👤");
+                const logUsesEmoji = resolveEmoji(interaction.client, emojiCfg.logUses, ["satou_uses", "green_check", "count", "badge_check"], "🟢");
+
                 const logEmbed = new EmbedBuilder()
                     .setColor(0x9B59B6)
-                    .setTitle(`🔮 ${interaction.user.username} ผ่านการยืนยันตัวตนแล้วค่ะ!`)
+                    .setTitle(`${logTitleEmoji} ${interaction.user.username} ผ่านการยืนยันตัวตนแล้วค่ะ!`)
                     .setDescription(
-                        `• 👤 **ผู้เชิญ:** ${inviteInfo.inviterTag} ( \`${inviteInfo.code}\` )\n` +
-                        `• 🟢 **จำนวนการใช้:** ${inviteInfo.uses} ครั้ง`
+                        `• ${logMemberEmoji} **ผู้เชิญ:** ${inviteInfo.inviterTag} ( \`${inviteInfo.code}\` )\n` +
+                        `• ${logUsesEmoji} **จำนวนการใช้:** ${inviteInfo.uses} ครั้ง`
                     )
                     .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true, size: 256 }))
                     .setFooter({

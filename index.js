@@ -416,6 +416,13 @@ client.on("guildCreate", async guild => {
 
 client.once("clientReady", async () => {
     console.log(`[BOT] Online: ${client.user.tag}`);
+    try {
+        const appEmojis = await client.application.emojis.fetch();
+        console.log(`[APP EMOJIS COUNT] ${appEmojis.size}`);
+        appEmojis.forEach(e => console.log(`[APP EMOJI] <${e.animated ? 'a' : ''}:${e.name}:${e.id}>`));
+    } catch(err) {
+        console.log(`[APP EMOJIS ERROR] ${err.message}`);
+    }
 
     // Discord Activity is global for the bot account, so member count must come
     // from one designated server only. Use GUILD_ID, or the first whitelist server.
@@ -850,7 +857,10 @@ client.on("interactionCreate", async interaction => {
 
         await interaction.deferReply({ ephemeral: true });
         try {
-            await sendVerifyPanel(channel, { bannerUrl });
+            await sendVerifyPanel(channel, {
+                bannerUrl,
+                emojis: config[interaction.guild.id].verify.emojis
+            });
             return interaction.editReply({
                 content: `✅ ตั้งค่าระบบยืนยันตัวตนสำเร็จแล้ว!\n📍 ห้องส่ง Panel: ${channel}\n🏷️ ยศที่จะได้รับ: ${role}` +
                     (logChannel ? `\n📜 ห้องบันทึก Log: ${logChannel}` : "") +
