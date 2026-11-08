@@ -12,15 +12,31 @@ const guildInvitesCache = new Map();
 const memberInviteMap = new Map();
 
 function formatThaiDate(date = new Date()) {
+    if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+        date = new Date();
+    }
     const months = [
         "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
         "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
     ];
-    const d = date.getDate();
-    const m = months[date.getMonth()];
-    const y = date.getFullYear() + 543;
-    const hours = String(date.getHours()).padStart(2, "0");
-    const mins = String(date.getMinutes()).padStart(2, "0");
+    const dtf = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Bangkok",
+        day: "numeric",
+        month: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+    });
+    const parts = {};
+    for (const p of dtf.formatToParts(date)) {
+        parts[p.type] = p.value;
+    }
+    const d = parts.day;
+    const m = months[parseInt(parts.month, 10) - 1];
+    const y = parseInt(parts.year, 10) + 543;
+    const hours = parts.hour === "24" ? "00" : parts.hour;
+    const mins = parts.minute;
     return `${d} ${m} ${y} ${hours}:${mins}`;
 }
 

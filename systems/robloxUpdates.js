@@ -11,7 +11,7 @@ function makeEmbed(topic) {
     return new EmbedBuilder().setColor(0x5865F2).setTitle("🤖 " + topic.title)
         .setURL("https://devforum.roblox.com/t/" + topic.slug + "/" + topic.id)
         .setDescription("มีประกาศ Roblox ใหม่จาก Developer Forum")
-        .addFields({name:"📅 วันที่",value:new Date(topic.created_at).toLocaleString("th-TH"),inline:true},{name:"💬 Replies",value:String(topic.reply_count ?? 0),inline:true})
+        .addFields({name:"📅 วันที่",value:new Date(topic.created_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }),inline:true},{name:"💬 Replies",value:String(topic.reply_count ?? 0),inline:true})
         .setFooter({text:"Roblox Developer Forum • Kraken Community"}).setTimestamp(new Date(topic.created_at));
 }
 async function sendTestUpdate(client, config, guildId) {
