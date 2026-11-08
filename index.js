@@ -117,7 +117,7 @@ const commands = [
         .setName("whitelist").setDescription("ระบบจัดการ Whitelist / Script Panel")
         .addSubcommand(s => s.setName("setup").setDescription("ส่ง Whitelist Panel เข้าห้องที่ต้องการ")
             .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่ง Panel").addChannelTypes(ChannelType.GuildText).setRequired(true))
-            .addRoleOption(o => o.setName("role").setDescription("ยศ Buyer ที่จะได้รับเมื่อรีดึมคีย์").setRequired(false))
+            .addRoleOption(o => o.setName("role").setDescription("ยศ VIP / Buyer ที่จะได้รับเมื่อรีดึมคีย์").setRequired(false))
             .addChannelOption(o => o.setName("log").setDescription("ห้องสำหรับบันทึก Log การใช้คีย์").addChannelTypes(ChannelType.GuildText).setRequired(false))
             .addStringOption(o => o.setName("title").setDescription("หัวข้อ Embed Panel").setRequired(false))
             .addStringOption(o => o.setName("description").setDescription("รายละเอียด Embed Panel").setRequired(false)))
@@ -125,7 +125,9 @@ const commands = [
         .addSubcommand(s => s.setName("genkey").setDescription("สร้างคีย์ใหม่สำหรับสคริปต์")
             .addIntegerOption(o => o.setName("days").setDescription("จำนวนวันที่ใช้งานได้ (เช่น 30 หรือ 3650 สำหรับตลอดชีพ)").setRequired(true))
             .addIntegerOption(o => o.setName("amount").setDescription("จำนวนคีย์ที่ต้องการสร้าง (1-20)").setMinValue(1).setMaxValue(20).setRequired(false)))
-        .addSubcommand(s => s.setName("role").setDescription("ตั้งค่ายศ Buyer สำหรับผู้ใช้งาน")
+        .addSubcommand(s => s.setName("vip").setDescription("ตั้งค่ายศ VIP สำหรับผู้ใช้งานที่รีดีมคีย์ผ่าน")
+            .addRoleOption(o => o.setName("role").setDescription("เลือกยศ VIP").setRequired(true)))
+        .addSubcommand(s => s.setName("role").setDescription("ตั้งค่ายศ VIP / Buyer สำหรับผู้ใช้งาน")
             .addRoleOption(o => o.setName("role").setDescription("เลือกยศ").setRequired(true)))
         .addSubcommand(s => s.setName("log").setDescription("ตั้งค่าห้องสำหรับบันทึก Log การใช้คีย์ / Reset HWID")
             .addChannelOption(o => o.setName("channel").setDescription("เลือกห้องบันทึก Log").addChannelTypes(ChannelType.GuildText).setRequired(true)))
@@ -592,9 +594,11 @@ client.on("messageCreate", async message => {
 
 const {
     getSettings: getWhitelistSettings,
+    saveSettings: saveWhitelistSettings,
     makeWhitelistPanel,
     handleWhitelistInteraction,
     sendWhitelistLog,
+    sendFailedRedeemLog,
     loadJSON: loadWhitelistJSON,
     saveJSON: saveWhitelistJSON,
     KEYS_FILE: WHITELIST_KEYS_FILE
@@ -1139,19 +1143,22 @@ client.on("interactionCreate", async interaction => {
             const title = interaction.options.getString("title");
             const desc = interaction.options.getString("description");
 
-            if (role) settings.buyerRoleId = role.id;
+            if (role) {
+                settings.vipRoleId = role.id;
+                settings.buyerRoleId = role.id;
+            }
             if (logCh) settings.logChannelId = logCh.id;
             if (title) settings.panelTitle = title;
             if (desc) settings.panelDesc = desc;
             settings.panelChannelId = ch.id;
-            saveConfig(config);
+            saveWhitelistSettings(interaction.guild.id, settings, config, saveConfig);
 
             await interaction.deferReply({ ephemeral: true });
             try {
                 const panelData = makeWhitelistPanel(settings);
                 await ch.send(panelData);
                 return interaction.editReply({
-                    content: `✅ ส่ง Whitelist Panel ไปยังห้อง ${ch} สำเร็จเรียบร้อยแล้ว` + (role ? ` (ยศ Buyer: <@&${role.id}>)` : "") + (logCh ? ` (ห้อง Log: <#${logCh.id}>)` : "")
+                    content: `✅ ส่ง Whitelist Panel ไปยังห้อง ${ch} สำเร็จเรียบร้อยแล้ว` + (role ? ` (ยศ VIP: <@&${role.id}>)` : "") + (logCh ? ` (ห้อง Log: <#${logCh.id}>)` : "")
                 });
             } catch (err) {
                 console.log("[WHITELIST SETUP ERROR]", err.message);
@@ -1216,12 +1223,13 @@ client.on("interactionCreate", async interaction => {
             });
         }
 
-        if (sub === "role") {
+        if (sub === "vip" || sub === "role") {
             const role = interaction.options.getRole("role", true);
+            settings.vipRoleId = role.id;
             settings.buyerRoleId = role.id;
-            saveConfig(config);
+            saveWhitelistSettings(interaction.guild.id, settings, config, saveConfig);
             return interaction.reply({
-                content: `✅ ตั้งค่ายศ Buyer เป็น <@&${role.id}> เรียบร้อยแล้ว`,
+                content: `✅ ตั้งค่ายศ VIP สำหรับ Whitelist เป็น <@&${role.id}> เรียบร้อยแล้ว (บันทึกถาวร)`,
                 ephemeral: true
             });
         }
@@ -1229,9 +1237,9 @@ client.on("interactionCreate", async interaction => {
         if (sub === "log") {
             const logChannel = interaction.options.getChannel("channel", true);
             settings.logChannelId = logChannel.id;
-            saveConfig(config);
+            saveWhitelistSettings(interaction.guild.id, settings, config, saveConfig);
             return interaction.reply({
-                content: `✅ ตั้งค่าห้องสำหรับบันทึก Log การใช้คีย์และรีเซ็ต HWID เป็น ${logChannel} เรียบร้อยแล้ว`,
+                content: `✅ ตั้งค่าห้องสำหรับบันทึก Log การใช้คีย์และรีเซ็ต HWID เป็น ${logChannel} เรียบร้อยแล้ว (บันทึกถาวร)`,
                 ephemeral: true
             });
         }
@@ -1239,9 +1247,9 @@ client.on("interactionCreate", async interaction => {
         if (sub === "script") {
             const code = interaction.options.getString("code", true);
             settings.scriptLoader = code;
-            saveConfig(config);
+            saveWhitelistSettings(interaction.guild.id, settings, config, saveConfig);
             return interaction.reply({
-                content: `✅ บันทึก Script Loader ใหม่เรียบร้อยแล้ว`,
+                content: `✅ บันทึก Script Loader ใหม่เรียบร้อยแล้ว (บันทึกถาวร)`,
                 ephemeral: true
             });
         }
