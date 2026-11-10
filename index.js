@@ -150,6 +150,18 @@ const commands = [
         .addRoleOption(o => o.setName("staff").setDescription("ยศทีมงานที่จะเห็น Ticket").setRequired(false))
         .addChannelOption(o => o.setName("notify").setDescription("ห้องสำหรับบันทึก Log / Transcript").addChannelTypes(ChannelType.GuildText).setRequired(false))
         .addStringOption(o => o.setName("image").setDescription("ลิงก์รูปภาพ Banner ใน Embed").setRequired(false)),
+    new SlashCommandBuilder()
+        .setName("security").setDescription("จัดการระบบความปลอดภัย Anti-Raid / Anti-Spam / Anti-Webhook")
+        .addSubcommand(s => s.setName("status").setDescription("ดูสถานะการตั้งค่าความปลอดภัยของเซิร์ฟเวอร์"))
+        .addSubcommand(s => s.setName("webhook").setDescription("ตั้งค่าระบบป้องกันสแปม Webhook (Anti-Webhook Spam)")
+            .addBooleanOption(o => o.setName("enabled").setDescription("เปิด/ปิดระบบป้องกันสแปม Webhook").setRequired(true))
+            .addIntegerOption(o => o.setName("limit").setDescription("จำนวนข้อความสแปมสูงสุดที่ยอมรับได้ (เช่น 3)").setMinValue(2).setMaxValue(20).setRequired(false))
+            .addIntegerOption(o => o.setName("seconds").setDescription("กรอบเวลาตรวจจับ (วินาที เช่น 5)").setMinValue(2).setMaxValue(30).setRequired(false))
+            .addBooleanOption(o => o.setName("auto_delete").setDescription("ลบ/เพิกถอน Webhook อัตโนมัติเมื่อตรวจพบสแปม (แนะนำเปิด)").setRequired(false))
+            .addBooleanOption(o => o.setName("block_mass_mentions").setDescription("บล็อก Webhook ที่แท็ก @everyone/@here").setRequired(false)))
+        .addSubcommand(s => s.setName("log").setDescription("ตั้งค่าห้องสำหรับบันทึก Security Logs")
+            .addChannelOption(o => o.setName("channel").setDescription("เลือกห้อง Log").addChannelTypes(ChannelType.GuildText).setRequired(true)))
+        .addSubcommand(s => s.setName("test").setDescription("ทดสอบส่ง Log ความปลอดภัย")),
 ].map(command => command.toJSON());
 // ==================== SERVER WHITELIST ====================
 function getAllowedGuildIds() {
@@ -457,7 +469,7 @@ client.once("clientReady", async () => {
     startRobloxUpdates(client, config, saveConfig);
     startYouTubeNotifications(client, config, saveConfig);
     startSecurity(client, config, saveConfig);
-    startVerify(client);
+    startVerify(client, config, saveConfig);
 });
 
 const TICKET_TYPES = {
@@ -616,12 +628,14 @@ const {
 const {
     startVerify,
     sendVerifyPanel,
-    handleVerifyInteraction
+    handleVerifyInteraction,
+    saveVerifySettings
 } = require("./systems/verify");
 
 const {
     sendTicketPanel: sendSatouTicketPanel,
-    handleTicketInteraction: handleSatouTicketInteraction
+    handleTicketInteraction: handleSatouTicketInteraction,
+    saveTicketSettings
 } = require("./systems/ticket");
 
 client.on("interactionCreate", async interaction => {
@@ -658,53 +672,7 @@ client.on("interactionCreate", async interaction => {
             if (!isOwner && !isStaff && !canManage) {
                 return interaction.reply({ content: "❌ เฉพาะเจ้าของ Ticket หรือทีมงานเท่านั้นที่ปิดห้องนี้ได้", ephemeral: true });
             }
-            const topicParts = interaction.channel?.topic?.split(":") || [];
-            const ticketOwnerId = topicParts[1] || ownerId || "ไม่ระบุ";
-            const ticketNumber = topicParts[2] || "ไม่ระบุ";
-            const ticketType = TICKET_TYPES[topicParts[3]]?.label || topicParts[3] || "ไม่ระบุ";
-            const ticketSubType = TICKET_SUBTYPES[topicParts[3]]?.find(item => item.id === topicParts[4])?.label || topicParts[4] || "ไม่ระบุ";
-            const ticketConfig = config[interaction.guildId]?.ticket || {};
-            const logChannelId = ticketConfig.notifyChannelId || ticketConfig.panelChannelId;
-            const logChannel = logChannelId
-                ? (interaction.guild.channels.cache.get(logChannelId) || await interaction.guild.channels.fetch(logChannelId).catch(() => null))
-                : null;
-            await interaction.deferReply({ ephemeral: true });
-            const closedAt = Date.now();
-            let transcriptFile = null;
-            try {
-                transcriptFile = {
-                    attachment: await buildTicketTranscript(interaction.channel),
-                    name: "Kraken-Ticket-" + ticketNumber + "-Transcript.html"
-                };
-            } catch (error) {
-                console.log("[TICKET TRANSCRIPT ERROR]", error.message);
-            }
-            if (logChannel?.isTextBased() && logChannel.send) {
-                const closeLog = new EmbedBuilder()
-                    .setColor(0xED4245)
-                    .setTitle("🔒 Ticket ถูกปิดแล้ว")
-                    .addFields(
-                        { name: "แท็กห้อง", value: "<#" + interaction.channel.id + ">", inline: true },
-                        { name: "ผู้เปิด Ticket", value: ticketOwnerId === "ไม่ระบุ" ? ticketOwnerId : "<@" + ticketOwnerId + ">", inline: true },
-                        { name: "ผู้ปิด Ticket", value: "<@" + interaction.user.id + ">", inline: true },
-                        { name: "หมวดหมู่", value: ticketType, inline: true },
-                        { name: "หัวข้อย่อย", value: ticketSubType, inline: true },
-                        { name: "ห้อง Ticket", value: interaction.channel.toString(), inline: true },
-                        { name: "เวลาปิด", value: "<t:" + Math.floor(closedAt / 1000) + ":F> (<t:" + Math.floor(closedAt / 1000) + ":R>)", inline: false },
-                        { name: "ประวัติแชท", value: transcriptFile ? "📄 แนบไฟล์ Transcript แล้ว" : "⚠️ สร้างไฟล์ Transcript ไม่สำเร็จ", inline: false }
-                    )
-                    .setTimestamp(closedAt);
-                try {
-                    await logChannel.send({
-                        embeds: [closeLog],
-                        files: transcriptFile ? [transcriptFile] : [],
-                        allowedMentions: { parse: [] }
-                    });
-                } catch (error) {
-                    console.log("[TICKET LOG ERROR]", error.message);
-                }
-            }
-            await interaction.editReply({ content: "🔒 กำลังปิด Ticket ห้องนี้จะถูกลบใน 5 วินาที" });
+            await interaction.reply({ content: "🔒 กำลังปิด Ticket ห้องนี้จะถูกลบใน 5 วินาที" });
             return setTimeout(() => interaction.channel?.delete().catch(error => console.log("[TICKET CLOSE ERROR]", error.message)), 5000);
         }
         return;
@@ -729,6 +697,78 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "✅ " + result });
         } catch (error) {
             return interaction.editReply({ content: "❌ " + error.message });
+        }
+    }
+
+    if (interaction.commandName === "security") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator) && !interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+            return interaction.reply({ content: "❌ ต้องมีสิทธิ์ Manage Server หรือ Administrator ในการจัดการระบบความปลอดภัย", ephemeral: true });
+        }
+        const sub = interaction.options.getSubcommand();
+        const s = settingsFor(config, interaction.guild.id);
+
+        if (sub === "status") {
+            const embed = new EmbedBuilder()
+                .setTitle("🛡️ Kraken Security Status")
+                .setColor(0x5865F2)
+                .setDescription(`สถานะระบบความปลอดภัยสำหรับเซิร์ฟเวอร์ **${interaction.guild.name}**`)
+                .addFields(
+                    { name: "🛡️ ระบบรวม", value: s.enabled ? "🟢 เปิดใช้งาน" : "🔴 ปิด", inline: true },
+                    { name: "🚨 Anti-Raid", value: s.antiRaid ? "🟢 เปิด" : "🔴 ปิด", inline: true },
+                    { name: "💬 Anti-Spam (สมาชิก)", value: s.antiSpam ? "🟢 เปิด" : "🔴 ปิด", inline: true },
+                    { name: "🪝 Anti-Webhook Spam", value: s.antiWebhookSpam ? "🟢 เปิดใช้งาน (Active)" : "🔴 ปิด", inline: true },
+                    { name: "⚡ Webhook Rate Limit", value: `${s.webhookSpamLimit || 3} ข้อความ / ${s.webhookWindowSeconds || 5} วินาที`, inline: true },
+                    { name: "🗑️ Auto-Delete Rogue Webhook", value: s.autoDeleteSpamWebhook ? "🟢 ลบ Webhook ถาวรอัตโนมัติ" : "🔴 ปิด", inline: true },
+                    { name: "🚫 บล็อก @everyone Webhook", value: s.blockMassMentions ? "🟢 เปิดบล็อก" : "🔴 ปิด", inline: true },
+                    { name: "📜 ห้อง Security Log", value: s.logChannelId ? `<#${s.logChannelId}>` : "⚠️ ยังไม่ได้ตั้งค่า", inline: true }
+                )
+                .setFooter({ text: "Kraken Community • Security Guard" })
+                .setTimestamp();
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (sub === "webhook") {
+            s.antiWebhookSpam = interaction.options.getBoolean("enabled", true);
+            const limit = interaction.options.getInteger("limit");
+            const seconds = interaction.options.getInteger("seconds");
+            const autoDel = interaction.options.getBoolean("auto_delete");
+            const blockMentions = interaction.options.getBoolean("block_mass_mentions");
+
+            if (limit !== null) s.webhookSpamLimit = limit;
+            if (seconds !== null) s.webhookWindowSeconds = seconds;
+            if (autoDel !== null) s.autoDeleteSpamWebhook = autoDel;
+            if (blockMentions !== null) s.blockMassMentions = blockMentions;
+
+            saveConfig(config);
+
+            const embed = new EmbedBuilder()
+                .setTitle("✅ บันทึกการตั้งค่า Anti-Webhook Spam สำเร็จ")
+                .setColor(0x57F287)
+                .setDescription(`อัปเดตระบบป้องกันสแปม Webhook สำหรับ **${interaction.guild.name}** เรียบร้อยแล้ว`)
+                .addFields(
+                    { name: "สถานะ", value: s.antiWebhookSpam ? "🟢 เปิดใช้งาน" : "🔴 ปิดใช้งาน", inline: true },
+                    { name: "จำกัดความเร็ว", value: `${s.webhookSpamLimit} ข้อความ / ${s.webhookWindowSeconds} วินาที`, inline: true },
+                    { name: "ลบ Webhook อัตโนมัติ", value: s.autoDeleteSpamWebhook ? "🟢 เปิด" : "🔴 ปิด", inline: true },
+                    { name: "บล็อกแท็กหมู่", value: s.blockMassMentions ? "🟢 เปิด" : "🔴 ปิด", inline: true }
+                )
+                .setTimestamp();
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (sub === "log") {
+            const ch = interaction.options.getChannel("channel", true);
+            s.logChannelId = ch.id;
+            saveConfig(config);
+            return interaction.reply({ content: `✅ ตั้งค่าห้อง Security Log ไปที่ ${ch} เรียบร้อยแล้ว`, ephemeral: true });
+        }
+
+        if (sub === "test") {
+            await sendLog(interaction.guild, config, "🧪 ทดสอบ Security Log", "ระบบความปลอดภัยและระบบป้องกัน Webhook Spam ทำงานได้ตามปกติ", 0x57F287, [
+                { name: "ผู้ทดสอบ", value: `<@${interaction.user.id}>`, inline: true },
+                { name: "Anti-Webhook Spam", value: s.antiWebhookSpam ? "🟢 Enabled" : "🔴 Disabled", inline: true },
+                { name: "Webhook Spam Limit", value: `${s.webhookSpamLimit || 3} ข้อความ / ${s.webhookWindowSeconds || 5} วินาที`, inline: true }
+            ], saveConfig);
+            return interaction.reply({ content: "✅ ส่งข้อความทดสอบ Security Log ไปยังห้องที่ตั้งค่าไว้เรียบร้อยแล้ว", ephemeral: true });
         }
     }
 
@@ -846,14 +886,16 @@ client.on("interactionCreate", async interaction => {
         const bannerUrl = interaction.options.getString("image");
 
         config[interaction.guild.id] ??= {};
-        config[interaction.guild.id].verify = {
+        const verifyData = {
             enabled: true,
             panelChannelId: channel.id,
             roleId: role.id,
             logChannelId: logChannel?.id || null,
             bannerUrl: bannerUrl || null
         };
+        config[interaction.guild.id].verify = verifyData;
         saveConfig(config);
+        saveVerifySettings(interaction.guild.id, verifyData, config, saveConfig);
 
         await interaction.deferReply({ ephemeral: true });
         try {
@@ -884,7 +926,7 @@ client.on("interactionCreate", async interaction => {
 
         config[interaction.guild.id] ??= {};
         const previousTicket = config[interaction.guild.id].ticket || {};
-        config[interaction.guild.id].ticket = {
+        const newTicketSettings = {
             ...previousTicket,
             panelChannelId: channel.id,
             categoryId: category?.id || previousTicket.categoryId || null,
@@ -892,7 +934,9 @@ client.on("interactionCreate", async interaction => {
             notifyChannelId: notify?.id || previousTicket.notifyChannelId || null,
             bannerUrl: bannerUrl || previousTicket.bannerUrl || null
         };
+        config[interaction.guild.id].ticket = newTicketSettings;
         saveConfig(config);
+        saveTicketSettings(interaction.guild.id, newTicketSettings, config, saveConfig);
 
         await interaction.deferReply({ ephemeral: true });
         try {
@@ -1294,7 +1338,7 @@ process.on("uncaughtException", error => {
     console.log("[UNCAUGHT EXCEPTION]", error);
 });
 
-const { startSecurity, moderate, sendLog } = require("./systems/security");
+const { startSecurity, moderate, sendLog, settingsFor } = require("./systems/security");
 const { startDashboard } = require("./web/dashboard");
 const { startRobloxUpdates, sendTestUpdate } = require("./systems/robloxUpdates");
 const { addSource: addYouTubeSource, removeSource: removeYouTubeSource, sendTestUpdate: sendYouTubeTest, startYouTubeNotifications } = require("./systems/youtubeNotifications");

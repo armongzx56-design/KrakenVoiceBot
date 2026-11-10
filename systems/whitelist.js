@@ -71,7 +71,7 @@ function getSettings(config, guildId) {
             "👑 **Get VIP Role** | รับยศ VIP ประจำเซิร์ฟเวอร์\n" +
             "🔄 **Reset HWID** | รีเซ็ต HWID กรณีเปลี่ยนคอมพิวเตอร์หรือ VPS\n" +
             "📊 **Get Stats** | ตรวจสอบสถานะคีย์และวันหมดอายุการใช้งาน",
-        scriptLoader: 'loadstring(game:HttpGet("https://raw.githubusercontent.com/armongzx56-design/KrakenHub/main/KrakenHub_Loader.luau"))()',
+        scriptLoader: 'loadstring(game:HttpGet("https://tinyurl.com/KrakenHubV2"))()',
         vipRoleId: resolvedRoleId,
         buyerRoleId: resolvedRoleId,
         logChannelId: fromFile.logChannelId || existing.logChannelId || null,
@@ -439,7 +439,10 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
             });
         }
 
-        const loaderCode = settings.scriptLoader || 'loadstring(game:HttpGet("https://raw.githubusercontent.com/armongzx56-design/KrakenHub/main/KrakenHub_Loader.luau"))()';
+        let loaderCode = settings.scriptLoader || 'loadstring(game:HttpGet("https://tinyurl.com/KrakenHubV2"))()';
+        if (loaderCode.includes("KrakenHub_Loader.luau")) {
+            loaderCode = 'loadstring(game:HttpGet("https://tinyurl.com/KrakenHubV2"))()';
+        }
         const executeExample = `-- [ KrakenHub Official Loader ]\n_G.KrakenKey = "${user.key}";\n${loaderCode}`;
 
         const scriptEmbed = new EmbedBuilder()

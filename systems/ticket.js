@@ -9,12 +9,98 @@ const {
     ChannelType,
     PermissionsBitField
 } = require("discord.js");
+const fs = require("fs");
+const path = require("path");
+
+const DATA_DIR = path.join(__dirname, "..", "data");
+const SETTINGS_FILE = path.join(DATA_DIR, "ticket_settings.json");
+
+const DEFAULT_TICKET_SETTINGS = {
+    "1550132569432137903": {
+        panelChannelId: "1566085837270159371", // #🎫・ticket
+        categoryId: "1566085930807332944",     // 📂 Tickets Category
+        staffRoleId: "1554242619259748463",    // Staff
+        bannerUrl: "https://i.imgur.com/hmmLOly.jpeg"
+    }
+};
+
+function ensureTicketSettingsFile() {
+    try {
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        if (!fs.existsSync(SETTINGS_FILE)) {
+            fs.writeFileSync(SETTINGS_FILE, JSON.stringify(DEFAULT_TICKET_SETTINGS, null, 2), "utf8");
+        }
+    } catch (e) {
+        console.error("[TICKET SETTINGS FILE ENSURE ERR]", e.message);
+    }
+}
+
+function loadTicketSettings() {
+    ensureTicketSettingsFile();
+    try {
+        const raw = fs.readFileSync(SETTINGS_FILE, "utf8");
+        const parsed = JSON.parse(raw);
+        return { ...DEFAULT_TICKET_SETTINGS, ...parsed };
+    } catch {
+        return { ...DEFAULT_TICKET_SETTINGS };
+    }
+}
+
+function saveTicketSettings(guildId, settings, config = null, saveConfig = null) {
+    ensureTicketSettingsFile();
+    try {
+        const current = loadTicketSettings();
+        current[guildId] = {
+            ...(DEFAULT_TICKET_SETTINGS[guildId] || {}),
+            ...(current[guildId] || {}),
+            ...settings
+        };
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(current, null, 2), "utf8");
+    } catch (e) {
+        console.error("[TICKET SETTINGS SAVE ERR]", e.message);
+    }
+
+    if (config && guildId) {
+        config[guildId] ??= {};
+        config[guildId].ticket = {
+            ...(config[guildId].ticket || {}),
+            ...settings
+        };
+        if (typeof saveConfig === "function") {
+            try { saveConfig(config); } catch (e) {}
+        }
+    }
+}
+
+function getTicketConfig(config, guildId) {
+    const fileSettings = loadTicketSettings();
+    const fromFile = fileSettings[guildId] || {};
+    const fromConfig = config?.[guildId]?.ticket || {};
+    const fallback = DEFAULT_TICKET_SETTINGS[guildId] || {};
+
+    const merged = {
+        ...fallback,
+        ...fromConfig,
+        ...fromFile
+    };
+
+    if (config && guildId) {
+        config[guildId] ??= {};
+        config[guildId].ticket = merged;
+    }
+
+    return merged;
+}
 
 function makeTicketPanel(options = {}) {
+    const leftWing = "<a:633625leftangleallwhitewing:1569102297487773696>";
+    const rightWing = "<a:602393rightangleallwhitewing:1569102295738884217>";
+    const pinkArrow = "<a:998057pinkarrow:1569102319105089637>";
+
     const embed = new EmbedBuilder()
         .setColor(0x2B2D31)
-        .setTitle("🪽 Ticket Support 🪽")
-        .setDescription("กดปุ่มด้านล่างเพื่อเปิด Ticket และติดต่อทีมงาน");
+        .setTitle(`${leftWing} Ticket Support ${rightWing}`)
+        .setDescription(`${pinkArrow} **กดปุ่มด้านล่างเพื่อเปิด Ticket และติดต่อทีมงาน**`);
 
     if (options.bannerUrl) {
         embed.setImage(options.bannerUrl);
@@ -24,7 +110,7 @@ function makeTicketPanel(options = {}) {
         new ButtonBuilder()
             .setCustomId("ticket_open_btn")
             .setLabel("เปิด Ticket")
-            .setEmoji("🎫")
+            .setEmoji({ id: "1569102283067621499", name: "437007ticket", animated: true })
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -80,7 +166,7 @@ ${body || "<p>ไม่มีข้อความใน Ticket</p>"}
 async function handleTicketInteraction(interaction, config, saveConfig) {
     const guild = interaction.guild;
     const guildId = guild.id;
-    const tc = config[guildId]?.ticket || {};
+    const tc = getTicketConfig(config, guildId);
 
     // 1. User clicks "เปิด Ticket" Button -> Show Modal
     if (interaction.isButton() && interaction.customId === "ticket_open_btn") {
@@ -121,9 +207,7 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
             // Next counter number
             const currentCounter = Number(tc.ticketCounter || 0) + 1;
             tc.ticketCounter = currentCounter;
-            config[guildId] ??= {};
-            config[guildId].ticket = tc;
-            saveConfig(config);
+            saveTicketSettings(guildId, { ticketCounter: currentCounter }, config, saveConfig);
 
             const channelName = `│・Tickets-${currentCounter}`;
             const categoryId = tc.categoryId;
@@ -184,13 +268,14 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
             const openTimestamp = Math.floor(Date.now() / 1000);
             const staffMention = staffRole ? `<@&${staffRole.id}>` : "@admin";
 
+            const pinkArrow = "<a:998057pinkarrow:1569102319105089637>";
             const ticketEmbed = new EmbedBuilder()
                 .setColor(0x2B2D31)
-                .setTitle(`🌟 Ticket #${currentCounter}`)
+                .setTitle(`<a:437007ticket:1569102283067621499> Ticket #${currentCounter}`)
                 .setDescription(
                     `ผู้เปิดตั๋ว: <@${interaction.user.id}>\n` +
                     `เวลาเปิด: <t:${openTimestamp}:R>\n` +
-                    `✨ แจ้งเตือนทีมงาน: ${staffMention}\n\n` +
+                    `${pinkArrow} แจ้งเตือนทีมงาน: ${staffMention}\n\n` +
                     `รายละเอียดปัญหา:\n` +
                     `┃ ${reason}\n\n` +
                     `ขอบคุณที่ติดต่อเรา กรุณาอธิบายปัญหาของคุณ ทีมงานจะเข้ามาช่วยเหลือโดยเร็วที่สุดครับ`
@@ -200,12 +285,12 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
                 new ButtonBuilder()
                     .setCustomId("ticket_close_btn")
                     .setLabel("ปิด Ticket")
-                    .setEmoji("🔴")
+                    .setEmoji({ id: "1569102233981685840", name: "22247redcard", animated: true })
                     .setStyle(ButtonStyle.Danger),
                 new ButtonBuilder()
                     .setCustomId("ticket_invite_btn")
                     .setLabel("Invite")
-                    .setEmoji("👥")
+                    .setEmoji({ id: "1569102307155779649", name: "785173catpaw", animated: true })
                     .setStyle(ButtonStyle.Success)
             );
 
@@ -338,46 +423,7 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
             });
         }
 
-        await interaction.deferReply();
-
-        let transcriptFile = null;
-        try {
-            const buffer = await buildTicketTranscript(interaction.channel);
-            transcriptFile = {
-                attachment: buffer,
-                name: `Kraken-Ticket-${ticketNum}-Transcript.html`
-            };
-        } catch (err) {
-            console.log("[TRANSCRIPT GENERATE ERROR]", err.message);
-        }
-
-        // Send transcript to notify/log channel
-        const logChannelId = tc.notifyChannelId || tc.panelChannelId;
-        if (logChannelId) {
-            const logChannel = guild.channels.cache.get(logChannelId) ||
-                await guild.channels.fetch(logChannelId).catch(() => null);
-
-            if (logChannel && logChannel.isTextBased() && logChannel.send) {
-                const closeLog = new EmbedBuilder()
-                    .setColor(0xED4245)
-                    .setTitle(`🔒 Ticket #${ticketNum} ถูกปิดแล้ว`)
-                    .addFields(
-                        { name: "ผู้เปิดตั๋ว", value: ownerId ? `<@${ownerId}>` : "ไม่ระบุ", inline: true },
-                        { name: "ผู้ปิดตั๋ว", value: `<@${interaction.user.id}>`, inline: true },
-                        { name: "ห้อง", value: interaction.channel.name, inline: true },
-                        { name: "ประวัติแชท", value: transcriptFile ? "📄 แนบไฟล์ Transcript แล้ว" : "⚠️ ไม่พบประวัติแชท", inline: false }
-                    )
-                    .setTimestamp();
-
-                await logChannel.send({
-                    embeds: [closeLog],
-                    files: transcriptFile ? [transcriptFile] : [],
-                    allowedMentions: { parse: [] }
-                }).catch(e => console.log("[TICKET CLOSE LOG ERROR]", e.message));
-            }
-        }
-
-        await interaction.editReply({
+        await interaction.reply({
             content: "🔒 กำลังปิด Ticket ห้องนี้จะถูกลบใน 5 วินาที..."
         });
 
@@ -391,6 +437,9 @@ module.exports = {
     sendTicketPanel,
     makeTicketPanel,
     handleTicketInteraction,
-    buildTicketTranscript
+    buildTicketTranscript,
+    getTicketConfig,
+    saveTicketSettings,
+    loadTicketSettings,
+    DEFAULT_TICKET_SETTINGS
 };
-

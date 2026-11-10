@@ -4,16 +4,42 @@ const joinWindows = new Map();
 const messageWindows = new Map();
 const recentMessages = new Map();
 
+// Webhook anti-spam tracking
+const webhookWindows = new Map();
+const recentWebhookMessages = new Map();
+const terminatingWebhooks = new Set();
+
 function settingsFor(config, guildId) {
     config[guildId] ??= {};
+    const defaultLogChannel = guildId === "1550132569432137903" ? "1563869910474428449" : null;
     config[guildId].security ??= {
-        enabled: true, antiRaid: true, antiSpam: true,
-        raidJoinLimit: 8, raidWindowSeconds: 10,
-        spamMessageLimit: 5, spamWindowSeconds: 6,
-        spamTimeoutSeconds: 60, raidTimeoutSeconds: 300,
-        logChannelId: null
+        enabled: true,
+        antiRaid: true,
+        antiSpam: true,
+        antiWebhookSpam: true,
+        webhookSpamLimit: 3,
+        webhookWindowSeconds: 5,
+        autoDeleteSpamWebhook: true,
+        blockMassMentions: true,
+        raidJoinLimit: 8,
+        raidWindowSeconds: 10,
+        spamMessageLimit: 5,
+        spamWindowSeconds: 6,
+        spamTimeoutSeconds: 60,
+        raidTimeoutSeconds: 300,
+        logChannelId: defaultLogChannel
     };
-    return config[guildId].security;
+    if (guildId === "1550132569432137903" && !config[guildId].security.logChannelId) {
+        config[guildId].security.logChannelId = "1563869910474428449";
+    }
+    const sec = config[guildId].security;
+    sec.antiWebhookSpam ??= true;
+    sec.webhookSpamLimit ??= 3;
+    sec.webhookWindowSeconds ??= 5;
+    sec.autoDeleteSpamWebhook ??= true;
+    sec.blockMassMentions ??= true;
+
+    return sec;
 }
 
 async function sendLog(guild, config, title, description, color = 0x5865F2, fields = [], saveConfig) {
@@ -23,7 +49,7 @@ async function sendLog(guild, config, title, description, color = 0x5865F2, fiel
     s.logs.unshift({ title, description: String(description || "").slice(0, 500), color, createdAt: Date.now(), fields: fields.slice(0, 10).map(f => ({ name: f.name, value: String(f.value).slice(0, 900) })) });
     s.logs = s.logs.slice(0, 200);
     if (saveConfig) saveConfig(config);
-    const id = s.logChannelId || config[guild.id]?.ticket?.notifyChannelId || config[guild.id]?.ticket?.panelChannelId;
+    const id = s.logChannelId;
     if (!id) return;
     const channel = guild.channels.cache.get(id) || await guild.channels.fetch(id).catch(() => null);
     if (!channel?.isTextBased?.() || !channel.send) return;
@@ -54,7 +80,85 @@ function startSecurity(client, config, saveConfig) {
     });
 
     client.on("messageCreate", async message => {
-        if (!message.guild || message.author.bot || !message.member) return;
+        if (!message.guild) return;
+
+        // 1. WEBHOOK ANTI-SPAM
+        if (message.webhookId) {
+            const s = settingsFor(config, message.guild.id);
+            if (!s.enabled || !s.antiWebhookSpam) return;
+
+            const webhookId = message.webhookId;
+            const now = Date.now();
+            const windowMs = Math.max(2, Number(s.webhookWindowSeconds) || 5) * 1000;
+            const spamLimit = Math.max(2, Number(s.webhookSpamLimit) || 3);
+            const key = `${message.guild.id}:${webhookId}`;
+
+            const arr = (webhookWindows.get(key) || []).filter(t => now - t < windowMs);
+            arr.push(now);
+            webhookWindows.set(key, arr);
+
+            const normalized = String(message.content || "").trim().toLowerCase();
+            const dupKey = `${key}:${normalized.slice(0, 180)}`;
+            const lastDup = recentWebhookMessages.get(dupKey) || 0;
+            recentWebhookMessages.set(dupKey, now);
+            const isDuplicate = normalized.length >= 4 && (now - lastDup < 10000);
+
+            const hasForbiddenMentions = s.blockMassMentions && (message.mentions.everyone || normalized.includes("@everyone") || normalized.includes("@here"));
+
+            const isSpam = arr.length >= spamLimit || (arr.length >= 2 && isDuplicate) || hasForbiddenMentions;
+
+            if (isSpam) {
+                if (terminatingWebhooks.has(webhookId)) {
+                    await message.delete().catch(() => null);
+                    return;
+                }
+                terminatingWebhooks.add(webhookId);
+                setTimeout(() => terminatingWebhooks.delete(webhookId), 30000);
+
+                await message.delete().catch(() => null);
+
+                let actionTaken = "ลบข้อความสแปมเรียบร้อย";
+                let webhookObj = null;
+
+                if (s.autoDeleteSpamWebhook) {
+                    try {
+                        webhookObj = await client.fetchWebhook(webhookId).catch(() => null);
+                        if (!webhookObj && message.channel.fetchWebhooks) {
+                            const hooks = await message.channel.fetchWebhooks().catch(() => null);
+                            webhookObj = hooks?.get(webhookId);
+                        }
+                        if (webhookObj && webhookObj.delete) {
+                            await webhookObj.delete("Kraken Anti-Webhook-Spam: Rate limit exceeded or mass ping detected");
+                            actionTaken = "ลบข้อความสแปม + สั่งเพิกถอน/ลบ Webhook ถาวรเรียบร้อย (Revoked Token)";
+                        } else {
+                            actionTaken = "ลบข้อความสแปม (Webhook ถูกลบไปแล้วหรือไม่พบในเซิร์ฟเวอร์)";
+                        }
+                    } catch (err) {
+                        console.log("[ANTI-WEBHOOK ERROR] Failed to delete webhook:", err.message);
+                        actionTaken = `ลบข้อความสแปม (ไม่สามารถลบ Webhook: ${err.message})`;
+                    }
+                }
+
+                const reason = hasForbiddenMentions
+                    ? "🚨 มีการพยายามแท็ก @everyone / @here ผ่าน Webhook"
+                    : (isDuplicate ? "⚠️ ส่งข้อความซ้ำรัวผิดปกติ (Burst Duplicate Spam)" : `⚠️ ส่งข้อความเกินอัตราที่กำหนด (${arr.length} ข้อความ/${windowMs / 1000} วิ)`);
+
+                await log(message.guild, config, "🚨 ตรวจพบ Webhook Spam / ดำเนินการระงับทันที", reason, 0xED4245, [
+                    { name: "ชื่อ Webhook", value: String(message.author.username || webhookObj?.name || "ไม่ทราบชื่อ"), inline: true },
+                    { name: "Webhook ID", value: String(webhookId), inline: true },
+                    { name: "ห้องที่เกิดเหตุ", value: `<#${message.channel.id}>`, inline: true },
+                    { name: "จำนวนข้อความสแปม", value: `${arr.length} ข้อความ ภายใน ${windowMs / 1000} วิ`, inline: true },
+                    { name: "การดำเนินการ", value: `🛡️ **${actionTaken}**`, inline: false },
+                    { name: "ตัวอย่างข้อความ", value: String(message.content || "[ข้อความว่างหรือ Embed]").slice(0, 500), inline: false }
+                ]);
+
+                webhookWindows.delete(key);
+            }
+            return;
+        }
+
+        // 2. REGULAR USER ANTI-SPAM
+        if (message.author.bot || !message.member) return;
         if (message.member.permissions.has(PermissionsBitField.Flags.ManageMessages) || message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
         const s = settingsFor(config, message.guild.id);
         if (!s.enabled || !s.antiSpam) return;
@@ -82,6 +186,32 @@ function startSecurity(client, config, saveConfig) {
         messageWindows.delete(key);
     });
 
+    client.on("webhookUpdate", async channel => {
+        if (!channel || !channel.guild) return;
+        const s = settingsFor(config, channel.guild.id);
+        if (!s.enabled || !s.antiWebhookSpam) return;
+
+        try {
+            if (channel.guild.members.me?.permissions.has(PermissionsBitField.Flags.ViewAuditLog)) {
+                const auditLogs = await channel.guild.fetchAuditLogs({ limit: 1 }).catch(() => null);
+                const entry = auditLogs?.entries.first();
+                if (entry && (Date.now() - entry.createdTimestamp < 8000)) {
+                    // Action 50 = WebhookCreate, 51 = WebhookUpdate, 52 = WebhookDelete
+                    const actionName = entry.action === 50 ? "สร้าง Webhook ใหม่" : entry.action === 51 ? "แก้ไข Webhook" : entry.action === 52 ? "ลบ Webhook" : null;
+                    if (actionName && entry.executor?.id !== client.user?.id) {
+                        await log(channel.guild, config, `🔔 มีการ${actionName}`, `ตรวจพบการเปลี่ยนแปลง Webhook ในห้อง <#${channel.id}>`, 0x5865F2, [
+                            { name: "ผู้ดำเนินการ", value: `<@${entry.executor.id}> (${entry.executor.tag})`, inline: true },
+                            { name: "ห้อง", value: `<#${channel.id}>`, inline: true },
+                            { name: "Webhook Name", value: String(entry.target?.name || "Webhook"), inline: true }
+                        ]);
+                    }
+                }
+            }
+        } catch (e) {
+            console.log("[WEBHOOK AUDIT ERROR]", e.message);
+        }
+    });
+
     client.on("messageDelete", async message => {
         if (!message.guild || message.author?.bot) return;
         await log(message.guild, config, "🗑️ มีข้อความถูกลบ", "ข้อความจาก " + (message.author?.tag || "ไม่ทราบผู้ใช้"), 0xED4245, [
@@ -97,10 +227,6 @@ function startSecurity(client, config, saveConfig) {
             { name: "ก่อนแก้ไข", value: String(before.content || "[ไม่มีเนื้อหา]").slice(0, 700), inline: false },
             { name: "หลังแก้ไข", value: String(after.content || "[ไม่มีเนื้อหา]").slice(0, 700), inline: false }
         ]);
-    });
-
-    client.on("guildMemberRemove", member => {
-        void log(member.guild, config, "🚪 สมาชิกออกจากเซิร์ฟเวอร์", member.user.tag + " (" + member.id + ")", 0x747F8D);
     });
 
     console.log("[SECURITY] Anti-Raid / Anti-Spam / audit logs loaded");

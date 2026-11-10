@@ -1,1 +1,21 @@
-{}
+{
+  "1550132569432137903": {
+    "security": {
+      "enabled": true,
+      "antiRaid": true,
+      "antiSpam": true,
+      "antiWebhookSpam": true,
+      "webhookSpamLimit": 3,
+      "webhookWindowSeconds": 5,
+      "autoDeleteSpamWebhook": true,
+      "blockMassMentions": true,
+      "raidJoinLimit": 8,
+      "raidWindowSeconds": 10,
+      "spamMessageLimit": 5,
+      "spamWindowSeconds": 6,
+      "spamTimeoutSeconds": 60,
+      "raidTimeoutSeconds": 300,
+      "logChannelId": "1563869910474428449"
+    }
+  }
+}
