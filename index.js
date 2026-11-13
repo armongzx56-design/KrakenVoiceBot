@@ -142,114 +142,120 @@ const config = loadConfig();
 const commands = [
     new SlashCommandBuilder()
         .setName("help")
-        .setDescription("ดูคำสั่งทั้งหมดของ KrakenVoiceBot"),
+        .setDescription("[ 📖 ] ดูคำสั่งทั้งหมดของ KrakenVoiceBot"),
     new SlashCommandBuilder()
         .setName("ping")
-        .setDescription("เช็กความเร็วตอบสนองของบอท"),
+        .setDescription("[ ⚡ ] เช็กความเร็วตอบสนองของบอท"),
     new SlashCommandBuilder()
-        .setName("announce").setDescription("ส่งประกาศไปยังห้องที่เลือก")
+        .setName("add-emoji")
+        .setDescription("[ ⭐ ] เพิ่มอิโมจิจากลิงก์รูปภาพ")
+        .addStringOption(o => o.setName("name").setDescription("[ 🏷️ ] ชื่ออิโมจิ (ตัวอักษร/ตัวเลข/ขีดล่าง)").setRequired(true))
+        .addStringOption(o => o.setName("url").setDescription("[ 🔗 ] ลิงก์รูปภาพ (.png, .jpg, .gif)").setRequired(false))
+        .addAttachmentOption(o => o.setName("image").setDescription("[ 🖼️ ] หรืออัปโหลดไฟล์ภาพโดยตรง").setRequired(false)),
+    new SlashCommandBuilder()
+        .setName("announce").setDescription("[ 📢 ] ส่งประกาศไปยังห้องที่เลือก")
         .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งประกาศ").addChannelTypes(ChannelType.GuildText).setRequired(true))
         .addStringOption(o => o.setName("message").setDescription("ข้อความประกาศ").setRequired(true))
         .addStringOption(o => o.setName("title").setDescription("หัวข้อประกาศ").setRequired(false)),
     new SlashCommandBuilder()
-        .setName("autopost").setDescription("ตั้งข้อความส่งอัตโนมัติตามช่วงเวลาที่เลือก")
-        .addSubcommand(sub => sub.setName("setup").setDescription("ตั้งห้อง ข้อความ และช่วงเวลาส่งอัตโนมัติ")
+        .setName("autopost").setDescription("[ 🔄 ] ตั้งข้อความส่งอัตโนมัติตามช่วงเวลาที่เลือก")
+        .addSubcommand(sub => sub.setName("setup").setDescription("[ ⚙️ ] ตั้งห้อง ข้อความ และช่วงเวลาส่งอัตโนมัติ")
             .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งข้อความ").addChannelTypes(ChannelType.GuildText).setRequired(true))
             .addStringOption(o => o.setName("message").setDescription("ข้อความที่จะส่งซ้ำ").setRequired(true))
             .addIntegerOption(o => o.setName("minutes").setDescription("ส่งซ้ำทุกกี่นาที เช่น 120 = 2 ชั่วโมง").setMinValue(1).setMaxValue(10080).setRequired(true)))
-        .addSubcommand(sub => sub.setName("stop").setDescription("ปิดการส่งข้อความอัตโนมัติ"))
-        .addSubcommand(sub => sub.setName("status").setDescription("ตรวจสอบการตั้งค่าข้อความอัตโนมัติ")),
+        .addSubcommand(sub => sub.setName("stop").setDescription("[ 🛑 ] ปิดการส่งข้อความอัตโนมัติ"))
+        .addSubcommand(sub => sub.setName("status").setDescription("[ 📊 ] ตรวจสอบการตั้งค่าข้อความอัตโนมัติ")),
     new SlashCommandBuilder()
         .setName("stats")
-        .setDescription("ดูสถานะและสถิติของบอท"),
+        .setDescription("[ 📈 ] ดูสถานะและสถิติของบอท"),
     new SlashCommandBuilder()
-        .setName("status").setDescription("ตั้งสถานะบอท")
-        .addSubcommand(s => s.setName("set").setDescription("ตั้งสถานะ")
+        .setName("status").setDescription("[ 🏷️ ] ตั้งสถานะการทำงานของบอท")
+        .addSubcommand(s => s.setName("set").setDescription("[ ✍️ ] ตั้งสถานะ")
             .addStringOption(o => o.setName("type").setDescription("ประเภท").setRequired(true)
                 .addChoices({name:"Playing",value:"Playing"},{name:"Watching",value:"Watching"},{name:"Listening",value:"Listening"},{name:"Competing",value:"Competing"},{name:"Streaming",value:"Streaming"}))
             .addStringOption(o => o.setName("text").setDescription("ข้อความ").setRequired(true))
             .addStringOption(o => o.setName("url").setDescription("ลิงก์ Twitch หรือ YouTube สำหรับสถานะ Streaming").setRequired(false)))
-        .addSubcommand(s => s.setName("clear").setDescription("ล้างสถานะ")),
+        .addSubcommand(s => s.setName("clear").setDescription("[ 🗑️ ] ล้างสถานะ")),
     new SlashCommandBuilder()
-        .setName("ticket").setDescription("ระบบ Ticket")
-        .addSubcommand(s => s.setName("setup").setDescription("ตั้ง Ticket Panel")
+        .setName("ticket").setDescription("[ 🎫 ] ระบบจัดการตั๋วช่วยเหลือ (Ticket)")
+        .addSubcommand(s => s.setName("setup").setDescription("[ ⚙️ ] ตั้งค่า Ticket Panel")
             .addChannelOption(o => o.setName("channel").setDescription("ห้อง Panel").addChannelTypes(ChannelType.GuildText).setRequired(true))
             .addChannelOption(o => o.setName("category").setDescription("หมวดหมู่ Ticket").addChannelTypes(ChannelType.GuildCategory))
             .addRoleOption(o => o.setName("staff").setDescription("ยศทีมงาน"))
             .addChannelOption(o => o.setName("notify").setDescription("ห้องแจ้งเตือนทีมงานเมื่อมี Ticket ใหม่").addChannelTypes(ChannelType.GuildText)))
-        .addSubcommand(s => s.setName("panel").setDescription("ส่ง Panel ใหม่")),
+        .addSubcommand(s => s.setName("panel").setDescription("[ 📨 ] ส่ง Panel ใหม่")),
     new SlashCommandBuilder()
-        .setName("247").setDescription("ให้บอทอยู่ในห้องเสียง 24/7")
+        .setName("247").setDescription("[ 🎧 ] ให้บอทอยู่ในห้องเสียง 24/7")
         .addChannelOption(o => o.setName("channel").setDescription("เลือกห้องเสียงที่ให้บอทเข้า").addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice).setRequired(true)),
     new SlashCommandBuilder()
-        .setName("youtube").setDescription("ระบบแจ้งเตือนคลิปใหม่จาก YouTube")
-        .addSubcommand(sub => sub.setName("setup").setDescription("ตั้งห้องแจ้งเตือน YouTube")
+        .setName("youtube").setDescription("[ 🔴 ] ระบบแจ้งเตือนคลิปใหม่จาก YouTube")
+        .addSubcommand(sub => sub.setName("setup").setDescription("[ ⚙️ ] ตั้งห้องแจ้งเตือน YouTube")
             .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะรับแจ้งเตือน").addChannelTypes(ChannelType.GuildText).setRequired(true)))
-        .addSubcommand(sub => sub.setName("add").setDescription("เพิ่มช่อง YouTube ที่ต้องการติดตาม")
+        .addSubcommand(sub => sub.setName("add").setDescription("[ ➕ ] เพิ่มช่อง YouTube ที่ต้องการติดตาม")
             .addStringOption(o => o.setName("channel_id").setDescription("YouTube Channel ID (ขึ้นต้นด้วย UC)").setRequired(true)))
-        .addSubcommand(sub => sub.setName("remove").setDescription("เลิกติดตามช่อง YouTube")
+        .addSubcommand(sub => sub.setName("remove").setDescription("[ ➖ ] เลิกติดตามช่อง YouTube")
             .addStringOption(o => o.setName("channel_id").setDescription("YouTube Channel ID ที่ต้องการลบ").setRequired(true)))
-        .addSubcommand(sub => sub.setName("list").setDescription("ดูช่อง YouTube ที่ติดตาม"))
-        .addSubcommand(sub => sub.setName("test").setDescription("ทดสอบการแจ้งเตือน YouTube")),
+        .addSubcommand(sub => sub.setName("list").setDescription("[ 📜 ] ดูช่อง YouTube ที่ติดตาม"))
+        .addSubcommand(sub => sub.setName("test").setDescription("[ 🧪 ] ทดสอบการแจ้งเตือน YouTube")),
     new SlashCommandBuilder()
-        .setName("roblox").setDescription("ระบบแจ้งเตือน Roblox")
-        .addSubcommand(s => s.setName("setup").setDescription("ตั้งห้องแจ้งเตือน")
+        .setName("roblox").setDescription("[ 🤖 ] ระบบแจ้งเตือนข่าวสาร Roblox")
+        .addSubcommand(s => s.setName("setup").setDescription("[ ⚙️ ] ตั้งห้องแจ้งเตือน")
             .addChannelOption(o => o.setName("channel").setDescription("ห้องข่าว").addChannelTypes(ChannelType.GuildText).setRequired(true)))
-        .addSubcommand(s => s.setName("test").setDescription("ทดสอบระบบ")),
+        .addSubcommand(s => s.setName("test").setDescription("[ 🧪 ] ทดสอบระบบ")),
     new SlashCommandBuilder()
-        .setName("mod").setDescription("คำสั่งจัดการสมาชิก")
-        .addSubcommand(x => x.setName("warn").setDescription("เตือนสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
-        .addSubcommand(x => x.setName("timeout").setDescription("พักสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addIntegerOption(o=>o.setName("minutes").setDescription("นาที").setMinValue(1).setMaxValue(10080).setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
-        .addSubcommand(x => x.setName("kick").setDescription("เตะสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
-        .addSubcommand(x => x.setName("ban").setDescription("แบนสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
-        .addSubcommand(x => x.setName("unban").setDescription("ปลดแบนด้วย User ID").addStringOption(o=>o.setName("user_id").setDescription("Discord User ID").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false))),
+        .setName("mod").setDescription("[ 🛡️ ] คำสั่งสำหรับทีมงานดูแลและจัดการสมาชิก")
+        .addSubcommand(x => x.setName("warn").setDescription("[ ⚠️ ] เตือนสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
+        .addSubcommand(x => x.setName("timeout").setDescription("[ ⏳ ] พักสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addIntegerOption(o=>o.setName("minutes").setDescription("นาที").setMinValue(1).setMaxValue(10080).setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
+        .addSubcommand(x => x.setName("kick").setDescription("[ 👢 ] เตะสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
+        .addSubcommand(x => x.setName("ban").setDescription("[ 🔨 ] แบนสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
+        .addSubcommand(x => x.setName("unban").setDescription("[ 🔓 ] ปลดแบนด้วย User ID").addStringOption(o=>o.setName("user_id").setDescription("Discord User ID").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false))),
     new SlashCommandBuilder()
-        .setName("whitelist").setDescription("ระบบจัดการ Whitelist / Script Panel")
-        .addSubcommand(s => s.setName("setup").setDescription("ส่ง Whitelist Panel เข้าห้องที่ต้องการ")
+        .setName("whitelist").setDescription("[ 🔑 ] ระบบจัดการ Whitelist / คีย์สคริปต์")
+        .addSubcommand(s => s.setName("setup").setDescription("[ ⚙️ ] ส่ง Whitelist Panel เข้าห้องที่ต้องการ")
             .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่ง Panel").addChannelTypes(ChannelType.GuildText).setRequired(true))
             .addRoleOption(o => o.setName("role").setDescription("ยศ VIP / Buyer ที่จะได้รับเมื่อรีดึมคีย์").setRequired(false))
             .addChannelOption(o => o.setName("log").setDescription("ห้องสำหรับบันทึก Log การใช้คีย์").addChannelTypes(ChannelType.GuildText).setRequired(false))
             .addStringOption(o => o.setName("title").setDescription("หัวข้อ Embed Panel").setRequired(false))
             .addStringOption(o => o.setName("description").setDescription("รายละเอียด Embed Panel").setRequired(false)))
-        .addSubcommand(s => s.setName("panel").setDescription("ส่ง Whitelist Panel ใหม่ลงในห้องปัจจุบัน"))
-        .addSubcommand(s => s.setName("genkey").setDescription("สร้างคีย์ใหม่สำหรับสคริปต์")
+        .addSubcommand(s => s.setName("panel").setDescription("[ 📨 ] ส่ง Whitelist Panel ใหม่ลงในห้องปัจจุบัน"))
+        .addSubcommand(s => s.setName("genkey").setDescription("[ 🎟️ ] สร้างคีย์ใหม่สำหรับสคริปต์")
             .addIntegerOption(o => o.setName("days").setDescription("จำนวนวันที่ใช้งานได้ (เช่น 30 หรือ 3650 สำหรับตลอดชีพ)").setRequired(true))
             .addIntegerOption(o => o.setName("amount").setDescription("จำนวนคีย์ที่ต้องการสร้าง (1-20)").setMinValue(1).setMaxValue(20).setRequired(false)))
-        .addSubcommand(s => s.setName("vip").setDescription("ตั้งค่ายศ VIP สำหรับผู้ใช้งานที่รีดีมคีย์ผ่าน")
+        .addSubcommand(s => s.setName("vip").setDescription("[ 👑 ] ตั้งค่ายศ VIP สำหรับผู้ใช้งานที่รีดีมคีย์ผ่าน")
             .addRoleOption(o => o.setName("role").setDescription("เลือกยศ VIP").setRequired(true)))
-        .addSubcommand(s => s.setName("role").setDescription("ตั้งค่ายศ VIP / Buyer สำหรับผู้ใช้งาน")
+        .addSubcommand(s => s.setName("role").setDescription("[ 👤 ] ตั้งค่ายศ VIP / Buyer สำหรับผู้ใช้งาน")
             .addRoleOption(o => o.setName("role").setDescription("เลือกยศ").setRequired(true)))
-        .addSubcommand(s => s.setName("log").setDescription("ตั้งค่าห้องสำหรับบันทึก Log การใช้คีย์ / Reset HWID")
+        .addSubcommand(s => s.setName("log").setDescription("[ 📜 ] ตั้งค่าห้องสำหรับบันทึก Log การใช้คีย์ / Reset HWID")
             .addChannelOption(o => o.setName("channel").setDescription("เลือกห้องบันทึก Log").addChannelTypes(ChannelType.GuildText).setRequired(true)))
-        .addSubcommand(s => s.setName("script").setDescription("ตั้งค่าข้อความ Script Loader")
+        .addSubcommand(s => s.setName("script").setDescription("[ 💻 ] ตั้งค่าข้อความ Script Loader")
             .addStringOption(o => o.setName("code").setDescription("โค้ด loadstring หรือลิงก์").setRequired(true))),
     new SlashCommandBuilder()
         .setName("setup-verify")
-        .setDescription("ตั้งค่าระบบยืนยันตัวตนรับยศ (สไตล์ Satou)")
+        .setDescription("[ ✅ ] ตั้งค่าระบบยืนยันตัวตนรับยศ (สไตล์ Satou)")
         .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งแผง Verify").addChannelTypes(ChannelType.GuildText).setRequired(true))
         .addRoleOption(o => o.setName("role").setDescription("ยศที่จะได้รับเมื่อยืนยันตัวตนสำเร็จ").setRequired(true))
         .addChannelOption(o => o.setName("log").setDescription("ห้องสำหรับส่งแจ้งเตือนการยืนยันตัวตน (#ยืนยันเสร็จ)").addChannelTypes(ChannelType.GuildText).setRequired(false))
         .addStringOption(o => o.setName("image").setDescription("ลิงก์รูปภาพ Banner ใน Embed").setRequired(false)),
     new SlashCommandBuilder()
         .setName("setup-ticket")
-        .setDescription("ตั้งค่าระบบ Ticket Support (สไตล์ Satou)")
+        .setDescription("[ 📩 ] ตั้งค่าระบบ Ticket Support (สไตล์ Satou)")
         .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งแผงเปิด Ticket").addChannelTypes(ChannelType.GuildText).setRequired(true))
         .addChannelOption(o => o.setName("category").setDescription("หมวดหมู่สำหรับห้อง Ticket").addChannelTypes(ChannelType.GuildCategory).setRequired(false))
         .addRoleOption(o => o.setName("staff").setDescription("ยศทีมงานที่จะเห็น Ticket").setRequired(false))
         .addChannelOption(o => o.setName("notify").setDescription("ห้องสำหรับบันทึก Log / Transcript").addChannelTypes(ChannelType.GuildText).setRequired(false))
         .addStringOption(o => o.setName("image").setDescription("ลิงก์รูปภาพ Banner ใน Embed").setRequired(false)),
     new SlashCommandBuilder()
-        .setName("security").setDescription("จัดการระบบความปลอดภัย Anti-Raid / Anti-Spam / Anti-Webhook")
-        .addSubcommand(s => s.setName("status").setDescription("ดูสถานะการตั้งค่าความปลอดภัยของเซิร์ฟเวอร์"))
-        .addSubcommand(s => s.setName("webhook").setDescription("ตั้งค่าระบบป้องกันสแปม Webhook (Anti-Webhook Spam)")
+        .setName("security").setDescription("[ 🔒 ] จัดการระบบความปลอดภัย Anti-Raid / Anti-Spam / Anti-Webhook")
+        .addSubcommand(s => s.setName("status").setDescription("[ 📊 ] ดูสถานะการตั้งค่าความปลอดภัยของเซิร์ฟเวอร์"))
+        .addSubcommand(s => s.setName("webhook").setDescription("[ 🛡️ ] ตั้งค่าระบบป้องกันสแปม Webhook (Anti-Webhook Spam)")
             .addBooleanOption(o => o.setName("enabled").setDescription("เปิด/ปิดระบบป้องกันสแปม Webhook").setRequired(true))
             .addIntegerOption(o => o.setName("limit").setDescription("จำนวนข้อความสแปมสูงสุดที่ยอมรับได้ (เช่น 3)").setMinValue(2).setMaxValue(20).setRequired(false))
             .addIntegerOption(o => o.setName("seconds").setDescription("กรอบเวลาตรวจจับ (วินาที เช่น 5)").setMinValue(2).setMaxValue(30).setRequired(false))
             .addBooleanOption(o => o.setName("auto_delete").setDescription("ลบ/เพิกถอน Webhook อัตโนมัติเมื่อตรวจพบสแปม (แนะนำเปิด)").setRequired(false))
             .addBooleanOption(o => o.setName("block_mass_mentions").setDescription("บล็อก Webhook ที่แท็ก @everyone/@here").setRequired(false)))
-        .addSubcommand(s => s.setName("log").setDescription("ตั้งค่าห้องสำหรับบันทึก Security Logs")
+        .addSubcommand(s => s.setName("log").setDescription("[ 📜 ] ตั้งค่าห้องสำหรับบันทึก Security Logs")
             .addChannelOption(o => o.setName("channel").setDescription("เลือกห้อง Log").addChannelTypes(ChannelType.GuildText).setRequired(true)))
-        .addSubcommand(s => s.setName("test").setDescription("ทดสอบส่ง Log ความปลอดภัย")),
+        .addSubcommand(s => s.setName("test").setDescription("[ 🧪 ] ทดสอบส่ง Log ความปลอดภัย")),
 ].map(command => command.toJSON());
 // ==================== SERVER WHITELIST ====================
 function getAllowedGuildIds() {
@@ -895,18 +901,90 @@ client.on("interactionCreate", async interaction => {
         return;
     }
 
+    if (interaction.commandName === "add-emoji") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuildExpressions) &&
+            !interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageEmojisAndStickers) &&
+            !interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild) &&
+            !interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: "❌ คุณไม่มีสิทธิ์ Manage Emojis and Stickers ในเซิร์ฟเวอร์นี้", ephemeral: true });
+        }
+
+        const botMember = interaction.guild?.members?.me;
+        if (botMember &&
+            !botMember.permissions.has(PermissionsBitField.Flags.ManageGuildExpressions) &&
+            !botMember.permissions.has(PermissionsBitField.Flags.ManageEmojisAndStickers) &&
+            !botMember.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: "❌ บอทต้องการสิทธิ์ `Manage Emojis and Stickers` เพื่อเพิ่มอิโมจิ", ephemeral: true });
+        }
+
+        const rawName = interaction.options.getString("name", true).trim();
+        const url = interaction.options.getString("url")?.trim();
+        const attachment = interaction.options.getAttachment("image");
+
+        const targetUrl = attachment ? attachment.url : url;
+        if (!targetUrl) {
+            return interaction.reply({ content: "❌ กรุณาระบุลิงก์รูปภาพในช่อง `url` หรือแนบไฟล์ในช่อง `image`", ephemeral: true });
+        }
+
+        let cleanName = rawName.replace(/[^a-zA-Z0-9_]/g, "_");
+        if (cleanName.length < 2) cleanName = cleanName + "_emoji";
+        if (cleanName.length > 32) cleanName = cleanName.slice(0, 32);
+
+        await interaction.deferReply({ ephemeral: false });
+
+        try {
+            const createdEmoji = await interaction.guild.emojis.create({
+                attachment: targetUrl,
+                name: cleanName,
+                reason: `Added by ${interaction.user.tag} (${interaction.user.id}) via /add-emoji`
+            });
+
+            const embed = new EmbedBuilder()
+                .setTitle("⭐ เพิ่มอิโมจิสำเร็จแล้ว!")
+                .setColor(0x57F287)
+                .setDescription(`เพิ่มอิโมจิ **<${createdEmoji.animated ? "a" : ""}:${createdEmoji.name}:${createdEmoji.id}>** (\`:${createdEmoji.name}:\`) เข้าสู่เซิร์ฟเวอร์เรียบร้อย`)
+                .setThumbnail(createdEmoji.url)
+                .addFields(
+                    { name: "🏷️ ชื่ออิโมจิ", value: `\`${createdEmoji.name}\``, inline: true },
+                    { name: "🆔 Emoji ID", value: `\`${createdEmoji.id}\``, inline: true },
+                    { name: "✨ ชนิด", value: createdEmoji.animated ? "🎬 เคลื่อนไหว (Animated)" : "🖼️ ภาพนิ่ง (Static)", inline: true },
+                    { name: "👤 เพิ่มโดย", value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true },
+                    { name: "💬 วิธีใช้", value: `\`<${createdEmoji.animated ? "a" : ""}:${createdEmoji.name}:${createdEmoji.id}>\``, inline: true }
+                )
+                .setFooter({ text: "Kraken Community • Emoji Manager" })
+                .setTimestamp();
+
+            return interaction.editReply({ embeds: [embed] });
+        } catch (error) {
+            console.error("[ADD-EMOJI ERROR]", error);
+            let msg = error.message;
+            if (msg.includes("Maximum number of emojis reached")) {
+                msg = "เซิร์ฟเวอร์นี้มีจำนวนอิโมจิเต็มโควต้าแล้ว ไม่สามารถเพิ่มได้อีก";
+            } else if (msg.includes("File cannot be larger than")) {
+                msg = "ไฟล์รูปภาพมีขนาดใหญ่เกิน 256 KB (ข้อจำกัดของ Discord)";
+            } else if (msg.includes("Failed to resize") || msg.includes("Invalid image")) {
+                msg = "รูปแบบไฟล์รูปภาพไม่ถูกต้อง หรือ Discord ไม่สามารถประมวลผลรูปภาพนี้ได้";
+            }
+            return interaction.editReply({ content: `❌ เพิ่มอิโมจิไม่สำเร็จ: ${msg}` });
+        }
+    }
+
     if (interaction.commandName === "help") {
         const embed = new EmbedBuilder()
             .setTitle("🦑 KrakenVoiceBot")
-            .setDescription("บอทเสียง 24/7 สำหรับ Kraken Community")
+            .setDescription("บอทเสียง 24/7 และระบบจัดการสำหรับ Kraken Community")
             .addFields(
                 {
-                    name: "🎧 Voice",
-                    value: "เข้า Voice อัตโนมัติ และพยายาม reconnect เมื่อหลุด"
+                    name: "🎧 Voice 24/7",
+                    value: "`/247` — ให้บอทอยู่ในห้องเสียง 24/7\n`/stats` — ดูสถานะและสถิติของบอท"
                 },
                 {
-                    name: "⚡ Commands",
-                    value: "`/help` — ดูคำสั่ง\n`/ping` — เช็ก latency\n`/announce` — ส่งประกาศ\n`/stats` — ดูสถานะบอท"
+                    name: "⭐ Features",
+                    value: "`/add-emoji` — เพิ่มอิโมจิจากลิงก์รูปภาพ\n`/autopost` — ตั้งข้อความส่งอัตโนมัติ (ติดถาวร)\n`/announce` — ส่งประกาศ\n`/ping` — เช็กความเร็วบอท"
+                },
+                {
+                    name: "🛡️ Server Management",
+                    value: "`/mod` — จัดการสมาชิก\n`/security` — ระบบ Anti-Raid / Anti-Spam\n`/setup-verify` — ตั้งแผงยืนยันตัวตน\n`/setup-ticket` — ตั้งระบบ Ticket\n`/whitelist` — จัดการ Whitelist / Key"
                 }
             )
             .setFooter({ text: "KrakenVoiceBot" });
