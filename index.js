@@ -494,12 +494,28 @@ async function sendChannelMessage(channel, content, webhookUrl = null, allowedMe
 }
 
 const autoPostTimers = new Map();
+const autoPostLocks = new Set();
 
-async function executeAutoPost(guildId) {
-    const current = config[guildId]?.autopost;
-    if (!current?.enabled || !current.channelId || !current.message) return;
+async function executeAutoPost(guildId, force = false) {
+    if (autoPostLocks.has(guildId)) return;
+    autoPostLocks.add(guildId);
 
     try {
+        const current = config[guildId]?.autopost;
+        if (!current?.enabled || !current.channelId || !current.message) return;
+
+        const intervalMinutes = Math.min(10080, Math.max(1, Number(current.intervalMinutes) || 60));
+        const intervalMs = intervalMinutes * 60 * 1000;
+        const lastSentAt = Number(current.lastSentAt || 0);
+        const elapsed = Date.now() - lastSentAt;
+
+        // ถ้าไม่ใช่ force และยังไม่ถึงรอบเวลา (หักเผื่อคลาดเคลื่อน 10 วินาที) ให้ข้าม ป้องกันการส่งถี่เกินกำหนด
+        if (!force && lastSentAt > 0 && elapsed < (intervalMs - 10000)) {
+            const waitMin = Math.ceil((intervalMs - elapsed) / 60000);
+            console.log(`[AUTOPOST] Skipped guild ${guildId}: only ${Math.round(elapsed / 60000)}m elapsed. Next in ~${waitMin}m`);
+            return;
+        }
+
         const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
         if (!guild) return;
         const channel = guild.channels.cache.get(current.channelId) || await guild.channels.fetch(current.channelId).catch(() => null);
@@ -515,18 +531,22 @@ async function executeAutoPost(guildId) {
             if (importedContent !== finalContent) {
                 finalContent = importedContent;
                 current.message = importedContent;
-                saveConfig(config);
             }
         } catch (importErr) {
             console.log("[AUTOPOST IMPORT ERR]", importErr.message);
         }
 
-        await sendChannelMessage(channel, finalContent, current.webhookUrl, { parse: [] });
+        // บันทึกเวลาที่ส่งทันทีก่อนยิงข้อความ เพื่อป้องกัน race condition
         current.lastSentAt = Date.now();
         saveConfig(config);
-        console.log(`[AUTOPOST] Sent to ${guild.name} / #${channel.name}${current.webhookUrl ? " via Webhook" : ""}`);
+
+        await sendChannelMessage(channel, finalContent, current.webhookUrl, { parse: [] });
+        console.log(`[AUTOPOST] Sent to ${guild.name} / #${channel.name}${current.webhookUrl ? " via Webhook" : ""}. Next in ${intervalMinutes}m`);
     } catch (error) {
         console.log(`[AUTOPOST ERROR] ${guildId}: ${error.message}`);
+    } finally {
+        // ถือ lock ไว้ 5 วินาที เพื่อป้องกัน duplicate execution
+        setTimeout(() => autoPostLocks.delete(guildId), 5000);
     }
 }
 
@@ -538,20 +558,31 @@ function startAutoPost(guildId) {
     const setting = config[guildId]?.autopost;
     if (!setting?.enabled || !setting.channelId || !setting.message) return;
 
-    // ตรวจสอบว่าถึงเวลาส่งหรือยัง หากบอทเพิ่งรีสตาร์ท หรือยังไม่เคยส่งเลย
     const intervalMinutes = Math.min(10080, Math.max(1, Number(setting.intervalMinutes) || 60));
     const intervalMs = intervalMinutes * 60 * 1000;
     const lastSentAt = Number(setting.lastSentAt || 0);
-    const elapsed = Date.now() - lastSentAt;
 
-    if (lastSentAt === 0 || elapsed >= intervalMs) {
-        // ครบกำหนดแล้ว หรือเพิ่งตั้งค่าใหม่ -> ส่งทันทีหลังบอทออนไลน์ 3 วินาที
+    // ตรวจสอบเวลาเมื่อบอทสตาร์ท
+    if (lastSentAt === 0) {
+        // ไม่เคยส่งเลย -> ส่งรอบแรกทันทีหลังออนไลน์ 3 วินาที
         setTimeout(() => {
-            executeAutoPost(guildId).catch(() => {});
+            executeAutoPost(guildId, true).catch(() => {});
         }, 3000);
+    } else {
+        const elapsed = Date.now() - lastSentAt;
+        if (elapsed >= intervalMs) {
+            // เลยกำหนดส่งไประหว่างบอทออฟไลน์ -> ส่งรอบตกค้าง
+            setTimeout(() => {
+                executeAutoPost(guildId).catch(() => {});
+            }, 3000);
+        } else {
+            // ยังไม่ถึงรอบเวลา -> ห้ามส่งซ้ำ ให้รอจนกว่าจะครบกำหนด
+            const remainingMinutes = Math.ceil((intervalMs - elapsed) / 60000);
+            console.log(`[AUTOPOST] Guild ${guildId} next post scheduled in ${remainingMinutes}m (last sent ${Math.round(elapsed / 60000)}m ago)`);
+        }
     }
 
-    // ลูปตรวจสอบทุก 15 วินาที เพื่อความแม่นยำสูง
+    // ลูปตรวจสอบทุก 15 วินาที
     const timer = setInterval(() => {
         const current = config[guildId]?.autopost;
         if (!current?.enabled) {
@@ -561,7 +592,7 @@ function startAutoPost(guildId) {
         }
         const curIntervalMs = Math.min(10080, Math.max(1, Number(current.intervalMinutes) || 60)) * 60 * 1000;
         const curLastSent = Number(current.lastSentAt || 0);
-        if (Date.now() - curLastSent >= curIntervalMs) {
+        if (curLastSent > 0 && (Date.now() - curLastSent) >= curIntervalMs) {
             executeAutoPost(guildId).catch(() => {});
         }
     }, 15 * 1000);
@@ -1130,10 +1161,11 @@ client.on("interactionCreate", async interaction => {
                 message: formattedMessage,
                 intervalMinutes,
                 webhookUrl: webhookUrl || config[interaction.guild.id].autopost?.webhookUrl || null,
-                lastSentAt: 0
+                lastSentAt: Date.now()
             };
             saveConfig(config);
             startAutoPost(interaction.guild.id);
+            executeAutoPost(interaction.guild.id, true).catch(() => {});
             return interaction.editReply({
                 content: `✅ **ตั้งข้อความอัตโนมัติสำเร็จแล้ว**\n📍 **ห้อง:** ${channel}\n⏰ **ความถี่:** ส่งซ้ำทุก ${intervalMinutes} นาที${intervalMinutes % 60 === 0 ? ` (${intervalMinutes / 60} ชั่วโมง)` : ""}\n${webhookUrl ? `🪝 **ส่งผ่าน Webhook:** เปิดใช้งาน (เรนเดอร์อีโมจิ Nitro 100%)\n` : `ℹ️ **โหมดส่ง:** ข้อความบอทอัตโนมัติ\n`}\n💬 **ตัวอย่างข้อความ:**\n${formattedMessage}\n\n🛑 ใช้ \`/autopost stop\` เพื่อปิดการทำงาน`,
                 allowedMentions: { parse: [] }
@@ -1150,11 +1182,8 @@ client.on("interactionCreate", async interaction => {
             }
             config[interaction.guild.id].autopost.webhookUrl = url;
             saveConfig(config);
-            setTimeout(() => {
-                executeAutoPost(interaction.guild.id).catch(() => {});
-            }, 1000);
             return interaction.reply({
-                content: `✅ **บันทึก Webhook URL สำหรับ Autopost เรียบร้อยแล้ว!**\n🪝 ระบบกำลังส่งข้อความทดสอบผ่าน Webhook ทันที\n✨ อีโมจิ Nitro นอกเซิร์ฟเวอร์จะแสดงผลขยับได้ 100%`,
+                content: `✅ **บันทึก Webhook URL สำหรับ Autopost เรียบร้อยแล้ว!**\n🪝 รอบการส่งครั้งถัดไปจะส่งผ่าน Webhook อัตโนมัติ\n✨ อีโมจิ Nitro นอกเซิร์ฟเวอร์จะแสดงผลขยับได้ 100%`,
                 ephemeral: true
             });
         }
