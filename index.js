@@ -147,12 +147,6 @@ const commands = [
         .setName("ping")
         .setDescription("[ ⚡ ] เช็กความเร็วตอบสนองของบอท"),
     new SlashCommandBuilder()
-        .setName("add-emoji")
-        .setDescription("[ ⭐ ] เพิ่มอิโมจิจากลิงก์รูปภาพ")
-        .addStringOption(o => o.setName("name").setDescription("[ 🏷️ ] ชื่ออิโมจิ (ตัวอักษร/ตัวเลข/ขีดล่าง)").setRequired(true))
-        .addStringOption(o => o.setName("url").setDescription("[ 🔗 ] ลิงก์รูปภาพ (.png, .jpg, .gif)").setRequired(false))
-        .addAttachmentOption(o => o.setName("image").setDescription("[ 🖼️ ] หรืออัปโหลดไฟล์ภาพโดยตรง").setRequired(false)),
-    new SlashCommandBuilder()
         .setName("announce").setDescription("[ 📢 ] ส่งประกาศไปยังห้องที่เลือก")
         .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งประกาศ").addChannelTypes(ChannelType.GuildText).setRequired(true))
         .addStringOption(o => o.setName("message").setDescription("ข้อความประกาศ").setRequired(true))
@@ -339,6 +333,55 @@ function startMemberCountRefresh(guild) {
     memberRefreshTimers.set(guild.id, timer);
 }
 
+// ==================== EMOJI & MESSAGE FORMATTING ====================
+const COMMON_EMOJI_SHORTCODES = {
+    "star": "⭐", "glove": "🥊", "boxing_glove": "🥊", "fire": "🔥",
+    "zap": "⚡", "lightning": "⚡", "check": "✅", "cross": "❌",
+    "x": "❌", "white_check_mark": "✅", "sparkles": "✨",
+    "key": "🔑", "link": "🔗", "bell": "🔔", "loudspeaker": "📢",
+    "mega": "📢", "shield": "🛡️", "lock": "🔒", "unlock": "🔓",
+    "ticket": "🎫", "warning": "⚠️", "gear": "⚙️", "tada": "🎉",
+    "robot": "🤖", "gem": "💎", "money": "💰", "moneybag": "💰",
+    "crown": "👑", "headphone": "🎧", "stop": "🛑", "pin": "📌",
+    "pushpin": "📌", "memo": "📝", "bulb": "💡", "arrow_right": "➡️",
+    "heart": "❤️", "skull": "💀", "rocket": "🚀", "eyes": "👀"
+};
+
+function resolveMessageEmojisAndFormatting(text, guild = null) {
+    if (!text || typeof text !== "string") return text;
+
+    // แปลง \n ให้ขึ้นบรรทัดใหม่จริง
+    let formatted = text.replace(/\\n/g, "\n");
+
+    // ตรวจหา :emoji_name: และแปลงเป็น Discord Custom Emoji (<:name:id> หรือ <a:name:id>) หรือ Unicode Emoji
+    formatted = formatted.replace(/(?<!<a?:):([a-zA-Z0-9_~]+):(?!\d+>)/g, (match, name) => {
+        const lowerName = name.toLowerCase();
+
+        if (guild && guild.emojis?.cache) {
+            const guildEmoji = guild.emojis.cache.find(e => e.name.toLowerCase() === lowerName);
+            if (guildEmoji) return `<${guildEmoji.animated ? "a" : ""}:${guildEmoji.name}:${guildEmoji.id}>`;
+        }
+
+        if (client?.application?.emojis?.cache) {
+            const appEmoji = client.application.emojis.cache.find(e => e.name.toLowerCase() === lowerName);
+            if (appEmoji) return `<${appEmoji.animated ? "a" : ""}:${appEmoji.name}:${appEmoji.id}>`;
+        }
+
+        if (client?.emojis?.cache) {
+            const clientEmoji = client.emojis.cache.find(e => e.name.toLowerCase() === lowerName);
+            if (clientEmoji) return `<${clientEmoji.animated ? "a" : ""}:${clientEmoji.name}:${clientEmoji.id}>`;
+        }
+
+        if (COMMON_EMOJI_SHORTCODES[lowerName]) {
+            return COMMON_EMOJI_SHORTCODES[lowerName];
+        }
+
+        return match;
+    });
+
+    return formatted;
+}
+
 const autoPostTimers = new Map();
 
 async function executeAutoPost(guildId) {
@@ -353,8 +396,11 @@ async function executeAutoPost(guildId) {
             console.log(`[AUTOPOST] Invalid text channel for guild ${guildId}`);
             return;
         }
+
+        const finalContent = resolveMessageEmojisAndFormatting(current.message, guild);
+
         await channel.send({
-            content: current.message,
+            content: finalContent,
             allowedMentions: { parse: [] }
         });
         current.lastSentAt = Date.now();
@@ -901,74 +947,6 @@ client.on("interactionCreate", async interaction => {
         return;
     }
 
-    if (interaction.commandName === "add-emoji") {
-        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuildExpressions) &&
-            !interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageEmojisAndStickers) &&
-            !interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild) &&
-            !interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: "❌ คุณไม่มีสิทธิ์ Manage Emojis and Stickers ในเซิร์ฟเวอร์นี้", ephemeral: true });
-        }
-
-        const botMember = interaction.guild?.members?.me;
-        if (botMember &&
-            !botMember.permissions.has(PermissionsBitField.Flags.ManageGuildExpressions) &&
-            !botMember.permissions.has(PermissionsBitField.Flags.ManageEmojisAndStickers) &&
-            !botMember.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: "❌ บอทต้องการสิทธิ์ `Manage Emojis and Stickers` เพื่อเพิ่มอิโมจิ", ephemeral: true });
-        }
-
-        const rawName = interaction.options.getString("name", true).trim();
-        const url = interaction.options.getString("url")?.trim();
-        const attachment = interaction.options.getAttachment("image");
-
-        const targetUrl = attachment ? attachment.url : url;
-        if (!targetUrl) {
-            return interaction.reply({ content: "❌ กรุณาระบุลิงก์รูปภาพในช่อง `url` หรือแนบไฟล์ในช่อง `image`", ephemeral: true });
-        }
-
-        let cleanName = rawName.replace(/[^a-zA-Z0-9_]/g, "_");
-        if (cleanName.length < 2) cleanName = cleanName + "_emoji";
-        if (cleanName.length > 32) cleanName = cleanName.slice(0, 32);
-
-        await interaction.deferReply({ ephemeral: false });
-
-        try {
-            const createdEmoji = await interaction.guild.emojis.create({
-                attachment: targetUrl,
-                name: cleanName,
-                reason: `Added by ${interaction.user.tag} (${interaction.user.id}) via /add-emoji`
-            });
-
-            const embed = new EmbedBuilder()
-                .setTitle("⭐ เพิ่มอิโมจิสำเร็จแล้ว!")
-                .setColor(0x57F287)
-                .setDescription(`เพิ่มอิโมจิ **<${createdEmoji.animated ? "a" : ""}:${createdEmoji.name}:${createdEmoji.id}>** (\`:${createdEmoji.name}:\`) เข้าสู่เซิร์ฟเวอร์เรียบร้อย`)
-                .setThumbnail(createdEmoji.url)
-                .addFields(
-                    { name: "🏷️ ชื่ออิโมจิ", value: `\`${createdEmoji.name}\``, inline: true },
-                    { name: "🆔 Emoji ID", value: `\`${createdEmoji.id}\``, inline: true },
-                    { name: "✨ ชนิด", value: createdEmoji.animated ? "🎬 เคลื่อนไหว (Animated)" : "🖼️ ภาพนิ่ง (Static)", inline: true },
-                    { name: "👤 เพิ่มโดย", value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true },
-                    { name: "💬 วิธีใช้", value: `\`<${createdEmoji.animated ? "a" : ""}:${createdEmoji.name}:${createdEmoji.id}>\``, inline: true }
-                )
-                .setFooter({ text: "Kraken Community • Emoji Manager" })
-                .setTimestamp();
-
-            return interaction.editReply({ embeds: [embed] });
-        } catch (error) {
-            console.error("[ADD-EMOJI ERROR]", error);
-            let msg = error.message;
-            if (msg.includes("Maximum number of emojis reached")) {
-                msg = "เซิร์ฟเวอร์นี้มีจำนวนอิโมจิเต็มโควต้าแล้ว ไม่สามารถเพิ่มได้อีก";
-            } else if (msg.includes("File cannot be larger than")) {
-                msg = "ไฟล์รูปภาพมีขนาดใหญ่เกิน 256 KB (ข้อจำกัดของ Discord)";
-            } else if (msg.includes("Failed to resize") || msg.includes("Invalid image")) {
-                msg = "รูปแบบไฟล์รูปภาพไม่ถูกต้อง หรือ Discord ไม่สามารถประมวลผลรูปภาพนี้ได้";
-            }
-            return interaction.editReply({ content: `❌ เพิ่มอิโมจิไม่สำเร็จ: ${msg}` });
-        }
-    }
-
     if (interaction.commandName === "help") {
         const embed = new EmbedBuilder()
             .setTitle("🦑 KrakenVoiceBot")
@@ -979,8 +957,8 @@ client.on("interactionCreate", async interaction => {
                     value: "`/247` — ให้บอทอยู่ในห้องเสียง 24/7\n`/stats` — ดูสถานะและสถิติของบอท"
                 },
                 {
-                    name: "⭐ Features",
-                    value: "`/add-emoji` — เพิ่มอิโมจิจากลิงก์รูปภาพ\n`/autopost` — ตั้งข้อความส่งอัตโนมัติ (ติดถาวร)\n`/announce` — ส่งประกาศ\n`/ping` — เช็กความเร็วบอท"
+                    name: "🔄 Automation & Messages",
+                    value: "`/autopost` — ตั้งข้อความส่งอัตโนมัติ (รองรับอีโมจิ & ขึ้นบรรทัดใหม่ \\n)\n`/announce` — ส่งประกาศลงห้องที่เลือก\n`/ping` — เช็กความเร็วตอบสนองของบอท"
                 },
                 {
                     name: "🛡️ Server Management",
@@ -1002,22 +980,28 @@ client.on("interactionCreate", async interaction => {
 
         if (sub === "setup") {
             const channel = interaction.options.getChannel("channel", true);
-            const message = interaction.options.getString("message", true).trim();
+            const rawMessage = interaction.options.getString("message", true).trim();
             const intervalMinutes = interaction.options.getInteger("minutes", true);
-            if (!message) return interaction.reply({ content: "❌ กรุณาระบุข้อความ", ephemeral: true });
+            if (!rawMessage) return interaction.reply({ content: "❌ กรุณาระบุข้อความ", ephemeral: true });
             if (intervalMinutes < 1 || intervalMinutes > 10080) return interaction.reply({ content: "❌ ตั้งเวลาได้ตั้งแต่ 1 ถึง 10080 นาที (7 วัน)", ephemeral: true });
+
+            if (interaction.guild.emojis.cache.size === 0) {
+                await interaction.guild.emojis.fetch().catch(() => {});
+            }
+
+            const formattedMessage = resolveMessageEmojisAndFormatting(rawMessage, interaction.guild);
 
             config[interaction.guild.id].autopost = {
                 enabled: true,
                 channelId: channel.id,
-                message,
+                message: formattedMessage,
                 intervalMinutes,
                 lastSentAt: 0
             };
             saveConfig(config);
             startAutoPost(interaction.guild.id);
             return interaction.reply({
-                content: `✅ **ตั้งข้อความอัตโนมัติสำเร็จแล้ว**\n📍 **ห้อง:** ${channel}\n⏰ **ความถี่:** ส่งซ้ำทุก ${intervalMinutes} นาที${intervalMinutes % 60 === 0 ? ` (${intervalMinutes / 60} ชั่วโมง)` : ""}\n📨 **ระบบเริ่มทำงานทันที และจำค่าถาวร 24/7 แม้บอทจะรีสตาร์ท**\n🛑 ใช้ \`/autopost stop\` เพื่อปิดการทำงาน`,
+                content: `✅ **ตั้งข้อความอัตโนมัติสำเร็จแล้ว**\n📍 **ห้อง:** ${channel}\n⏰ **ความถี่:** ส่งซ้ำทุก ${intervalMinutes} นาที${intervalMinutes % 60 === 0 ? ` (${intervalMinutes / 60} ชั่วโมง)` : ""}\n📨 **ระบบเริ่มทำงานทันที (จำค่าถาวร 24/7 แม้บอทจะรีสตาร์ท)**\n\n💬 **ตัวอย่างข้อความ:**\n${formattedMessage}\n\n🛑 ใช้ \`/autopost stop\` เพื่อปิดการทำงาน`,
                 ephemeral: true,
                 allowedMentions: { parse: [] }
             });
@@ -1298,8 +1282,10 @@ client.on("interactionCreate", async interaction => {
             return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
         }
         const channel = interaction.options.getChannel("channel", true);
-        const message = interaction.options.getString("message", true);
-        const title = interaction.options.getString("title") || "📢 ประกาศ";
+        const rawMessage = interaction.options.getString("message", true);
+        const rawTitle = interaction.options.getString("title") || "📢 ประกาศ";
+        const message = resolveMessageEmojisAndFormatting(rawMessage, interaction.guild);
+        const title = resolveMessageEmojisAndFormatting(rawTitle, interaction.guild);
         // แยกลิงก์ออกจากข้อความ เพื่อให้ Discord สร้าง Link Preview/Video Preview ได้
         const urls = message.match(/https?:\/\/[^\s<>]+/g) || [];
         const cleanMessage = message.replace(/https?:\/\/[^\s<>]+/g, "").trim();
