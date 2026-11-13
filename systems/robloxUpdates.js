@@ -1,15 +1,44 @@
 const { EmbedBuilder } = require("discord.js");
 
-const WEAO_URLS = [
+const WEAO_VERSION_URLS = [
     "https://weao.xyz/api/versions/current",
     "https://whatexpsare.online/api/versions/current",
     "https://weao.gg/api/versions/current"
 ];
+
+const WEAO_EXPLOIT_URLS = [
+    "https://weao.xyz/api/status/exploits",
+    "https://whatexpsare.online/api/status/exploits",
+    "https://weao.gg/api/status/exploits"
+];
+
 const POLL_MS = 3 * 60 * 1000; // เช็คทุก 3 นาที
 
-async function fetchRobloxVersions() {
+const EMOJIS = {
+    leftWing: "<a:633625leftangleallwhitewing:1569102297487773696>",
+    rightWing: "<a:602393rightangleallwhitewing:1569102295738884217>",
+    pinkArrow: "<a:998057pinkarrow:1569102319105089637>",
+    catPaw: "<a:785173catpaw:1569102307155779649>",
+    ticket: "<a:437007ticket:1569102283067621499>",
+    goldCoin: "<a:933416goldenspincoin:1569102317305860226>",
+    thumbsUp: "<:460044catthumbsup:1569102289090912346>"
+};
+
+const POPULAR_EXECUTORS = [
+    "Delta",
+    "Wave",
+    "Solara",
+    "Xeno",
+    "Potassium",
+    "Matcha",
+    "MacSploit",
+    "Vega X",
+    "SirHurt"
+];
+
+async function fetchFromEndpoints(urls, errorMsg) {
     let lastError = null;
-    for (const url of WEAO_URLS) {
+    for (const url of urls) {
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 8000);
@@ -21,30 +50,52 @@ async function fetchRobloxVersions() {
                 signal: controller.signal
             });
             clearTimeout(timeout);
-            if (!response.ok) throw new Error("WEAO API HTTP " + response.status);
+            if (!response.ok) throw new Error("HTTP " + response.status);
             const data = await response.json();
-            if (data && (data.Windows || data.Android || data.iOS || data.Mac)) {
-                return data;
-            }
+            if (data) return data;
         } catch (err) {
             lastError = err;
         }
     }
-    throw lastError || new Error("ไม่สามารถติดต่อ WEAO Version API ได้");
+    throw lastError || new Error(errorMsg);
 }
 
-function makeVersionEmbed(data, changedPlatforms = [], isTest = false) {
+async function fetchRobloxVersions() {
+    return await fetchFromEndpoints(WEAO_VERSION_URLS, "ไม่สามารถติดต่อ WEAO Version API ได้");
+}
+
+async function fetchExploitStatuses() {
+    return await fetchFromEndpoints(WEAO_EXPLOIT_URLS, "ไม่สามารถติดต่อ WEAO Exploits API ได้");
+}
+
+function makeVersionEmbed(data, exploits = [], changedPlatforms = [], isTest = false) {
     const embed = new EmbedBuilder();
 
+    const isUpdate = changedPlatforms.length > 0;
+    const color = isTest ? 0x5865F2 : (isUpdate ? 0xFF3366 : 0x00F0FF);
+    embed.setColor(color);
+
     if (isTest) {
-        embed.setColor(0x5865F2)
-            .setTitle("🧪 [TEST] ทดสอบระบบแจ้งเตือนเวอร์ชันใหม่ของ Roblox")
-            .setDescription("นี่คือตัวอย่างข้อความแจ้งเตือนเมื่อระบบตรวจพบการปล่อยเวอร์ชันใหม่ของ Roblox (ดึงข้อมูลสดจาก WEAO Tracker)");
+        embed.setTitle(`${EMOJIS.leftWing} [TEST] ทดสอบระบบแจ้งเตือนเวอร์ชัน Roblox ${EMOJIS.rightWing}`);
+        embed.setDescription(
+            `🧪 **นี่คือข้อความทดสอบระบบแจ้งเตือนเวอร์ชัน Roblox**\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `${EMOJIS.pinkArrow} ข้อมูล Realtime เชื่อมต่อผ่าน **WEAO Version & Exploit API**`
+        );
+    } else if (isUpdate) {
+        const platformText = changedPlatforms.join(", ");
+        embed.setTitle(`🚨 ตรวจพบการอัปเดตเวอร์ชันใหม่ของ Roblox!`);
+        embed.setDescription(
+            `⚡ **Roblox มีการปล่อยแพตช์ใหม่สำหรับ: ${platformText}**\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `⚠️ **คำเตือน:** ตัวรันสคริปต์ส่วนใหญ่อาจหยุดทำงานชั่วคราว เพื่อความปลอดภัยโปรดหลีกเลี่ยงการใช้อีดิหลักจนกว่าตัวรันจะอัปเดตครับ`
+        );
     } else {
-        const platformText = changedPlatforms.length > 0 ? changedPlatforms.join(", ") : "Roblox Client";
-        embed.setColor(0xFF3366)
-            .setTitle("🚨 ตรวจพบการอัปเดตเวอร์ชันใหม่ของ Roblox!")
-            .setDescription(`ระบบตรวจพบว่า Roblox มีการปล่อยเวอร์ชัน/แพตช์ใหม่สำหรับ: **${platformText}**`);
+        embed.setTitle(`${EMOJIS.leftWing} ตรวจสอบเวอร์ชัน Roblox & ตัวรัน Realtime ${EMOJIS.rightWing}`);
+        embed.setDescription(
+            `🌐 **ข้อมูลเวอร์ชัน Roblox และสถานะตัวรันล่าสุดทุกแพลตฟอร์ม**\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        );
     }
 
     const winMark = changedPlatforms.some(p => p.includes("Windows")) ? " ⭐ (UPDATED)" : "";
@@ -63,28 +114,128 @@ function makeVersionEmbed(data, changedPlatforms = [], isTest = false) {
 
     embed.addFields(
         {
-            name: `🖥️ Windows (PC)${winMark}`,
-            value: `• **Version:** \`${winVer}\`\n• **Deploy Hash:** \`${winHash}\`\n• **Deploy Date:** ${winDate}`,
+            name: `╭── 🖥️ Windows Client (PC)${winMark}`,
+            value: `>>> • **Version:** \`${winVer}\`\n• **Deploy Hash:** \`${winHash}\`\n• **Deploy Date:** ${winDate}`,
             inline: false
         },
         {
-            name: `📱 Mobile (Android / iOS)${mobileMark}`,
-            value: `• **Android:** \`${androidVer}\`\n• **iOS:** \`${iosVer}\``,
+            name: `╭── 📱 Mobile Client${mobileMark}`,
+            value: `>>> • **Android:** \`${androidVer}\`\n• **iOS:** \`${iosVer}\``,
             inline: true
         },
         {
-            name: `🍎 macOS${macMark}`,
-            value: `• **Version:** \`${macVer}\`\n• **Deploy Hash:** \`${macHash}\``,
+            name: `╭── 🍎 macOS Client${macMark}`,
+            value: `>>> • **Version:** \`${macVer}\`\n• **Deploy Hash:** \`${macHash}\``,
             inline: true
-        },
-        {
-            name: "⚠️ คำแนะนำสำหรับผู้ใช้สคริปต์ & ตัวรัน (Executor)",
-            value: "เมื่อ Roblox มีการอัปเดตเวอร์ชันใหม่ โปรแกรมรันสคริปต์ส่วนใหญ่อาจไม่สามารถใช้งานได้ชั่วคราว จนกว่าผู้พัฒนาตัวรันจะอัปเดต Signature/Offsets ให้ตรงกับเวอร์ชันนี้",
-            inline: false
         }
     );
 
-    embed.setFooter({ text: "WEAO Version Tracker • KrakenHub" }).setTimestamp();
+    // ถ้ามีข้อมูล Exploits ให้สรุปสถานะตัวรันยอดนิยม
+    if (Array.isArray(exploits) && exploits.length > 0) {
+        const total = exploits.length;
+        const updated = exploits.filter(x => x.updateStatus).length;
+        const undetected = exploits.filter(x => !x.detected).length;
+
+        const popularList = exploits.filter(x => POPULAR_EXECUTORS.includes(x.title));
+        const popularLines = popularList.map(x => {
+            const statusBadge = x.updateStatus ? "🟢 อัปเดตแล้ว" : "🔴 รออัปเดต";
+            const detectBadge = x.detected ? "⚠️ เสี่ยงแบน" : "🛡️ ปลอดภัย";
+            const costBadge = x.free ? "🆓 ฟรี" : "💵 เสียเงิน";
+            const suncBadge = x.suncPercentage ? ` (${x.suncPercentage}% sUNC)` : "";
+            return `• **${x.title}** [${x.platform}]: ${statusBadge} • ${detectBadge} • ${costBadge}${suncBadge}`;
+        });
+
+        embed.addFields(
+            {
+                name: "╭── ⚡ สถานะตัวรันยอดนิยม (Popular Executors)",
+                value: `>>> ${popularLines.slice(0, 8).join("\n")}`,
+                inline: false
+            },
+            {
+                name: "╭── 📊 สรุปสถิติตัวรันทั้งหมด",
+                value: `>>> • 🟢 **พร้อมใช้งาน:** \`${updated}/${total}\` ตัว\n• 🛡️ **ปลอดภัย (Undetected):** \`${undetected}/${total}\` ตัว\n• 🔍 ดูตัวรันทั้งหมด 31 ตัว ใช้คำสั่ง \`/roblox executors\``,
+                inline: false
+            }
+        );
+    }
+
+    embed.addFields({
+        name: "╭── 💡 คำแนะนำสำหรับสมาชิก KrakenHub",
+        value: ">>> 1. หาก Roblox เพิ่งอัปเดต กรุณารอตัวรันอัปเดตสถานะเป็น 🟢 ก่อนเข้าเกม\n2. ตัวรันที่มีสถานะ ⚠️ ควรใช้งานบนไอดีสำรองเพื่อความปลอดภัย\n3. ติดตามข่าวสารการอัปเดตแบบอัตโนมัติ 24 ชม. ผ่าน KrakenVoiceBot",
+        inline: false
+    });
+
+    embed.setFooter({
+        text: "WEAO Realtime Tracker • KrakenHub System"
+    }).setTimestamp();
+
+    return embed;
+}
+
+function makeExecutorsEmbed(exploits, platformFilter = "all") {
+    const embed = new EmbedBuilder()
+        .setColor(0x00F0FF)
+        .setTitle(`${EMOJIS.leftWing} สถานะตัวรัน Roblox ทั้งหมด (Realtime Tracker) ${EMOJIS.rightWing}`)
+        .setDescription(
+            `📡 **ระบบตรวจสอบสถานะตัวรัน (Executors) แบบเรียลไทม์ผ่าน WEAO API**\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        );
+
+    let filtered = exploits;
+    if (platformFilter && platformFilter !== "all") {
+        if (platformFilter.toLowerCase() === "mobile") {
+            filtered = exploits.filter(x => x.platform === "Android" || x.platform === "iOS");
+        } else {
+            filtered = exploits.filter(x => x.platform.toLowerCase() === platformFilter.toLowerCase());
+        }
+    }
+
+    const formatItem = (x) => {
+        const status = x.updateStatus ? "🟢" : "🔴";
+        const detect = x.detected ? "⚠️" : "🛡️";
+        const price = x.free ? "🆓" : "💵";
+        const score = x.suncPercentage ? ` \`${x.suncPercentage}% sUNC\`` : (x.uncPercentage ? ` \`${x.uncPercentage}% UNC\`` : "");
+        return `${status} ${detect} **${x.title}** (\`${x.version || "N/A"}\`) • ${price}${score}`;
+    };
+
+    const windows = filtered.filter(x => x.platform === "Windows");
+    const mobile = filtered.filter(x => x.platform === "Android" || x.platform === "iOS");
+    const mac = filtered.filter(x => x.platform === "Mac");
+
+    if (windows.length > 0) {
+        embed.addFields({
+            name: `╭── 🖥️ Windows Executors (${windows.length} ตัว)`,
+            value: `>>> ${windows.slice(0, 15).map(formatItem).join("\n")}${windows.length > 15 ? `\n...และอีก ${windows.length - 15} ตัว` : ""}`,
+            inline: false
+        });
+    }
+
+    if (mobile.length > 0) {
+        embed.addFields({
+            name: `╭── 📱 Mobile Executors - Android & iOS (${mobile.length} ตัว)`,
+            value: `>>> ${mobile.map(x => formatItem(x) + ` [${x.platform}]`).join("\n")}`,
+            inline: false
+        });
+    }
+
+    if (mac.length > 0) {
+        embed.addFields({
+            name: `╭── 🍎 macOS Executors (${mac.length} ตัว)`,
+            value: `>>> ${mac.map(formatItem).join("\n")}`,
+            inline: false
+        });
+    }
+
+    const totalUpdated = exploits.filter(x => x.updateStatus).length;
+    const totalSafe = exploits.filter(x => !x.detected).length;
+
+    embed.addFields({
+        name: "╭── 📌 คำอธิบายสัญลักษณ์",
+        value: `>>> 🟢 = อัปเดตพร้อมใช้งาน | 🔴 = ยังไม่อัปเดต\n🛡️ = ปลอดภัย (Undetected) | ⚠️ = ตรวจจับ (Detected)\n🆓 = ฟรี | 💵 = มีค่าบริการ\n**สถิติรวม:** 🟢 \`${totalUpdated}/${exploits.length}\` ตัวรันอัปเดตแล้ว | 🛡️ \`${totalSafe}/${exploits.length}\` ปลอดภัย`,
+        inline: false
+    });
+
+    embed.setFooter({ text: "WEAO Realtime Tracker • KrakenHub System" }).setTimestamp();
     return embed;
 }
 
@@ -95,10 +246,14 @@ async function sendTestUpdate(client, config, guildId) {
     const channel = guild?.channels.cache.get(rb.channelId);
     if (!channel?.isTextBased()) throw new Error("ไม่พบห้องแจ้งเตือน หรือบอทไม่มีสิทธิ์เข้าถึงห้องนี้");
 
-    const data = await fetchRobloxVersions();
-    const embed = makeVersionEmbed(data, ["Windows (PC)"], true);
+    const [versions, exploits] = await Promise.all([
+        fetchRobloxVersions(),
+        fetchExploitStatuses().catch(() => [])
+    ]);
+
+    const embed = makeVersionEmbed(versions, exploits, ["Windows (PC)"], true);
     await channel.send({ embeds: [embed] });
-    return data;
+    return versions;
 }
 
 async function check(client, config, saveConfig) {
@@ -149,7 +304,8 @@ async function check(client, config, saveConfig) {
         }
 
         if (changedPlatforms.length > 0) {
-            const embed = makeVersionEmbed(data, changedPlatforms, false);
+            const exploits = await fetchExploitStatuses().catch(() => []);
+            const embed = makeVersionEmbed(data, exploits, changedPlatforms, false);
             await channel.send({ embeds: [embed] }).catch(e => console.log("[ROBLOX SEND ERROR]", e.message));
 
             // อัปเดตเวอร์ชันล่าสุดที่ตรวจพบ
@@ -178,5 +334,7 @@ module.exports = {
     startRobloxUpdates,
     sendTestUpdate,
     fetchRobloxVersions,
-    makeVersionEmbed
+    fetchExploitStatuses,
+    makeVersionEmbed,
+    makeExecutorsEmbed
 };

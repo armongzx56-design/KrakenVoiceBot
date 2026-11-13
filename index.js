@@ -196,11 +196,19 @@ const commands = [
         .addSubcommand(sub => sub.setName("list").setDescription("[ 📜 ] ดูช่อง YouTube ที่ติดตาม"))
         .addSubcommand(sub => sub.setName("test").setDescription("[ 🧪 ] ทดสอบการแจ้งเตือน YouTube")),
     new SlashCommandBuilder()
-        .setName("roblox").setDescription("[ 🤖 ] ระบบแจ้งเตือนเวอร์ชัน Roblox")
+        .setName("roblox").setDescription("[ 🤖 ] ระบบแจ้งเตือนเวอร์ชัน Roblox & เช็กสถานะตัวรัน")
         .addSubcommand(s => s.setName("setup").setDescription("[ ⚙️ ] ตั้งห้องแจ้งเตือนเวอร์ชันใหม่")
             .addChannelOption(o => o.setName("channel").setDescription("ห้องแจ้งเตือน").addChannelTypes(ChannelType.GuildText).setRequired(true)))
         .addSubcommand(s => s.setName("test").setDescription("[ 🧪 ] ทดสอบระบบแจ้งเตือน"))
-        .addSubcommand(s => s.setName("check").setDescription("[ 🔍 ] ดูเวอร์ชันปัจจุบันของ Roblox"))
+        .addSubcommand(s => s.setName("check").setDescription("[ 🔍 ] ดูเวอร์ชันปัจจุบันของ Roblox & ตัวรันยอดนิยม"))
+        .addSubcommand(s => s.setName("executors").setDescription("[ ⚡ ] เช็กสถานะตัวรันสคริปต์ 31 ตัวแบบ Realtime")
+            .addStringOption(o => o.setName("platform").setDescription("เลือกแพลตฟอร์มที่ต้องการดู").setRequired(false)
+                .addChoices(
+                    { name: "🌐 ทั้งหมด (All)", value: "all" },
+                    { name: "🖥️ Windows (PC)", value: "Windows" },
+                    { name: "📱 Mobile (Android / iOS)", value: "Mobile" },
+                    { name: "🍎 macOS", value: "Mac" }
+                )))
         .addSubcommand(s => s.setName("stop").setDescription("[ 🛑 ] ปิดการแจ้งเตือนเวอร์ชัน Roblox")),
     new SlashCommandBuilder()
         .setName("mod").setDescription("[ 🛡️ ] คำสั่งสำหรับทีมงานดูแลและจัดการสมาชิก")
@@ -1467,13 +1475,25 @@ client.on("interactionCreate", async interaction => {
         if (sub === "check") {
             await interaction.deferReply({ephemeral: false});
             try {
-                const data = await fetchRobloxVersions();
-                const embed = makeVersionEmbed(data, [], false)
-                    .setTitle("🔍 เวอร์ชันปัจจุบันของ Roblox")
-                    .setDescription("ข้อมูลเวอร์ชันล่าสุดของทุกแพลตฟอร์ม (Windows, Mobile, Mac)");
+                const [data, exploits] = await Promise.all([
+                    fetchRobloxVersions(),
+                    fetchExploitStatuses().catch(() => [])
+                ]);
+                const embed = makeVersionEmbed(data, exploits, [], false);
                 return interaction.editReply({embeds: [embed]});
             } catch (err) {
                 return interaction.editReply("❌ ไม่สามารถดึงข้อมูลเวอร์ชันได้: " + err.message);
+            }
+        }
+        if (sub === "executors") {
+            await interaction.deferReply({ephemeral: false});
+            try {
+                const platform = interaction.options.getString("platform") || "all";
+                const exploits = await fetchExploitStatuses();
+                const embed = makeExecutorsEmbed(exploits, platform);
+                return interaction.editReply({embeds: [embed]});
+            } catch (err) {
+                return interaction.editReply("❌ ไม่สามารถดึงข้อมูลสถานะตัวรันได้: " + err.message);
             }
         }
         if (sub === "test") {
@@ -1729,7 +1749,7 @@ process.on("uncaughtException", error => {
 
 const { startSecurity, moderate, sendLog, settingsFor } = require("./systems/security");
 const { startDashboard } = require("./web/dashboard");
-const { startRobloxUpdates, sendTestUpdate, fetchRobloxVersions, makeVersionEmbed } = require("./systems/robloxUpdates");
+const { startRobloxUpdates, sendTestUpdate, fetchRobloxVersions, fetchExploitStatuses, makeVersionEmbed, makeExecutorsEmbed } = require("./systems/robloxUpdates");
 const { addSource: addYouTubeSource, removeSource: removeYouTubeSource, sendTestUpdate: sendYouTubeTest, startYouTubeNotifications } = require("./systems/youtubeNotifications");
 startDashboard({ client, config, saveConfig, formatUptime });
 
