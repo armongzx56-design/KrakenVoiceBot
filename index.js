@@ -13,7 +13,8 @@ const {
     ButtonBuilder,
     ButtonStyle,
     StringSelectMenuBuilder,
-    PermissionsBitField
+    PermissionsBitField,
+    WebhookClient
 } = require("discord.js");
 
 const fs = require("fs");
@@ -156,7 +157,10 @@ const commands = [
         .addSubcommand(sub => sub.setName("setup").setDescription("[ ⚙️ ] ตั้งห้อง ข้อความ และช่วงเวลาส่งอัตโนมัติ")
             .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งข้อความ").addChannelTypes(ChannelType.GuildText).setRequired(true))
             .addStringOption(o => o.setName("message").setDescription("ข้อความที่จะส่งซ้ำ").setRequired(true))
-            .addIntegerOption(o => o.setName("minutes").setDescription("ส่งซ้ำทุกกี่นาที เช่น 120 = 2 ชั่วโมง").setMinValue(1).setMaxValue(10080).setRequired(true)))
+            .addIntegerOption(o => o.setName("minutes").setDescription("ส่งซ้ำทุกกี่นาที เช่น 120 = 2 ชั่วโมง").setMinValue(1).setMaxValue(10080).setRequired(true))
+            .addStringOption(o => o.setName("webhook").setDescription("ลิงก์ Webhook URL ของห้อง (เพื่อให้อีโมจิ Nitro แสดงผล 100%)").setRequired(false)))
+        .addSubcommand(sub => sub.setName("webhook").setDescription("[ 🪝 ] ตั้งค่า Webhook URL สำหรับส่งข้อความ (เพื่อให้อีโมจิ Nitro แสดงผล 100%)")
+            .addStringOption(o => o.setName("url").setDescription("ลิงก์ Webhook URL จากการตั้งค่าห้อง").setRequired(true)))
         .addSubcommand(sub => sub.setName("stop").setDescription("[ 🛑 ] ปิดการส่งข้อความอัตโนมัติ"))
         .addSubcommand(sub => sub.setName("status").setDescription("[ 📊 ] ตรวจสอบการตั้งค่าข้อความอัตโนมัติ")),
     new SlashCommandBuilder()
@@ -426,11 +430,27 @@ async function autoImportExternalEmojis(text, guild) {
 }
 
 // ส่งข้อความผ่าน Webhook เพื่อให้ Discord เรนเดอร์อีโมจิ Nitro จากทุกเซิร์ฟเวอร์ได้ 100%
-async function sendChannelMessage(channel, content, allowedMentions = { parse: [] }) {
+async function sendChannelMessage(channel, content, webhookUrl = null, allowedMentions = { parse: [] }) {
     if (!channel || !channel.isTextBased()) return null;
+
+    // 1. ถ้ามีลิงก์ Webhook URL ที่ระบุไว้ ให้ยิงผ่าน WebhookClient ทันที (รองรับอีโมจิ Nitro 100% ไม่สนสิทธิ์บอท)
+    if (webhookUrl && /^https:\/\/(canary\.|ptb\.)?discord(app)?\.com\/api\/webhooks\/\d+\/[\w-]+$/i.test(webhookUrl)) {
+        try {
+            const hook = new WebhookClient({ url: webhookUrl });
+            return await hook.send({
+                content,
+                username: client.user.username,
+                avatarURL: client.user.displayAvatarURL({ dynamic: true }),
+                allowedMentions
+            });
+        } catch (hookErr) {
+            console.log("[CUSTOM WEBHOOK SEND ERR]", hookErr.message);
+        }
+    }
 
     const hasCustomEmojis = /<a?:[a-zA-Z0-9_~]+:\d+>/.test(content);
 
+    // 2. ถ้าข้อความมีอีโมจิและไม่ได้ใส่ Webhook URL ให้ลองสร้าง/ค้นหา Webhook ของบอทอัตโนมัติ
     if (hasCustomEmojis && channel.fetchWebhooks && channel.guild) {
         try {
             const botMember = channel.guild.members.me || channel.guild.members.cache.get(client.user.id);
@@ -446,7 +466,7 @@ async function sendChannelMessage(channel, content, allowedMentions = { parse: [
                         avatar: client.user.displayAvatarURL({ dynamic: true }),
                         reason: "Autopost Webhook for Nitro Emojis"
                     }).catch(err => {
-                        console.log("[WEBHOOK CREATE ERR]", err.message);
+                        console.log("[AUTO WEBHOOK CREATE ERR]", err.message);
                         return null;
                     });
                 }
@@ -461,7 +481,7 @@ async function sendChannelMessage(channel, content, allowedMentions = { parse: [
                 }
             }
         } catch (err) {
-            console.log("[WEBHOOK DISPATCH ERR]", err.message);
+            console.log("[AUTO WEBHOOK DISPATCH ERR]", err.message);
         }
     }
 
@@ -499,10 +519,10 @@ async function executeAutoPost(guildId) {
             console.log("[AUTOPOST IMPORT ERR]", importErr.message);
         }
 
-        await sendChannelMessage(channel, finalContent, { parse: [] });
+        await sendChannelMessage(channel, finalContent, current.webhookUrl, { parse: [] });
         current.lastSentAt = Date.now();
         saveConfig(config);
-        console.log(`[AUTOPOST] Sent to ${guild.name} / #${channel.name}`);
+        console.log(`[AUTOPOST] Sent to ${guild.name} / #${channel.name}${current.webhookUrl ? " via Webhook" : ""}`);
     } catch (error) {
         console.log(`[AUTOPOST ERROR] ${guildId}: ${error.message}`);
     }
@@ -1079,8 +1099,14 @@ client.on("interactionCreate", async interaction => {
             const channel = interaction.options.getChannel("channel", true);
             const rawMessage = interaction.options.getString("message", true).trim();
             const intervalMinutes = interaction.options.getInteger("minutes", true);
+            const webhookUrl = interaction.options.getString("webhook")?.trim() || null;
+
             if (!rawMessage) return interaction.reply({ content: "❌ กรุณาระบุข้อความ", ephemeral: true });
             if (intervalMinutes < 1 || intervalMinutes > 10080) return interaction.reply({ content: "❌ ตั้งเวลาได้ตั้งแต่ 1 ถึง 10080 นาที (7 วัน)", ephemeral: true });
+
+            if (webhookUrl && !/^https:\/\/(canary\.|ptb\.)?discord(app)?\.com\/api\/webhooks\/\d+\/[\w-]+$/i.test(webhookUrl)) {
+                return interaction.reply({ content: "❌ ลิงก์ Webhook URL ไม่ถูกต้อง (ต้องเป็นลิงก์ `https://discord.com/api/webhooks/...`)", ephemeral: true });
+            }
 
             await interaction.deferReply({ ephemeral: true });
 
@@ -1101,13 +1127,33 @@ client.on("interactionCreate", async interaction => {
                 channelId: channel.id,
                 message: formattedMessage,
                 intervalMinutes,
+                webhookUrl: webhookUrl || config[interaction.guild.id].autopost?.webhookUrl || null,
                 lastSentAt: 0
             };
             saveConfig(config);
             startAutoPost(interaction.guild.id);
             return interaction.editReply({
-                content: `✅ **ตั้งข้อความอัตโนมัติสำเร็จแล้ว**\n📍 **ห้อง:** ${channel}\n⏰ **ความถี่:** ส่งซ้ำทุก ${intervalMinutes} นาที${intervalMinutes % 60 === 0 ? ` (${intervalMinutes / 60} ชั่วโมง)` : ""}\n📨 **ระบบเริ่มทำงานทันที (จำค่าถาวร 24/7 แม้บอทจะรีสตาร์ท)**\n\n💬 **ตัวอย่างข้อความ:**\n${formattedMessage}\n\n🛑 ใช้ \`/autopost stop\` เพื่อปิดการทำงาน`,
+                content: `✅ **ตั้งข้อความอัตโนมัติสำเร็จแล้ว**\n📍 **ห้อง:** ${channel}\n⏰ **ความถี่:** ส่งซ้ำทุก ${intervalMinutes} นาที${intervalMinutes % 60 === 0 ? ` (${intervalMinutes / 60} ชั่วโมง)` : ""}\n${webhookUrl ? `🪝 **ส่งผ่าน Webhook:** เปิดใช้งาน (เรนเดอร์อีโมจิ Nitro 100%)\n` : `ℹ️ **โหมดส่ง:** ข้อความบอทอัตโนมัติ\n`}\n💬 **ตัวอย่างข้อความ:**\n${formattedMessage}\n\n🛑 ใช้ \`/autopost stop\` เพื่อปิดการทำงาน`,
                 allowedMentions: { parse: [] }
+            });
+        }
+
+        if (sub === "webhook") {
+            const url = interaction.options.getString("url", true).trim();
+            if (!/^https:\/\/(canary\.|ptb\.)?discord(app)?\.com\/api\/webhooks\/\d+\/[\w-]+$/i.test(url)) {
+                return interaction.reply({ content: "❌ ลิงก์ Webhook URL ไม่ถูกต้อง (ต้องเป็นลิงก์ `https://discord.com/api/webhooks/...`)", ephemeral: true });
+            }
+            if (!config[interaction.guild.id]?.autopost) {
+                return interaction.reply({ content: "❌ กรุณาใช้ `/autopost setup` ตั้งค่าห้องและข้อความก่อน", ephemeral: true });
+            }
+            config[interaction.guild.id].autopost.webhookUrl = url;
+            saveConfig(config);
+            setTimeout(() => {
+                executeAutoPost(interaction.guild.id).catch(() => {});
+            }, 1000);
+            return interaction.reply({
+                content: `✅ **บันทึก Webhook URL สำหรับ Autopost เรียบร้อยแล้ว!**\n🪝 ระบบกำลังส่งข้อความทดสอบผ่าน Webhook ทันที\n✨ อีโมจิ Nitro นอกเซิร์ฟเวอร์จะแสดงผลขยับได้ 100%`,
+                ephemeral: true
             });
         }
 
