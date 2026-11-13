@@ -45,10 +45,98 @@ const reconnectingGuilds = new Set();
 const intentionalVoiceChanges = new Set();
 const DATA_DIR = path.join(__dirname, "data");
 const CONFIG_FILE = path.join(DATA_DIR, "config.json");
+const AUTOPOST_FILE = path.join(DATA_DIR, "autopost_settings.json");
+const VOICE_FILE = path.join(DATA_DIR, "voice_settings.json");
+const STATUS_FILE = path.join(DATA_DIR, "status_settings.json");
+const YOUTUBE_FILE = path.join(DATA_DIR, "youtube_settings.json");
+const ROBLOX_FILE = path.join(DATA_DIR, "roblox_settings.json");
+const SECURITY_FILE = path.join(DATA_DIR, "security_settings.json");
+
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-if (!fs.existsSync(CONFIG_FILE)) fs.writeFileSync(CONFIG_FILE, "{}");
-function loadConfig() { try { return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")); } catch { return {}; } }
-function saveConfig(c) { fs.writeFileSync(CONFIG_FILE, JSON.stringify(c, null, 2)); }
+
+function safeReadJSON(filepath, def = {}) {
+    try {
+        if (fs.existsSync(filepath)) return JSON.parse(fs.readFileSync(filepath, "utf8"));
+    } catch (e) {
+        console.error(`[PERSISTENCE READ ERR ${path.basename(filepath)}]`, e.message);
+    }
+    return def;
+}
+
+function safeWriteJSON(filepath, data) {
+    try {
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        const tmp = filepath + ".tmp";
+        fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+        fs.renameSync(tmp, filepath);
+    } catch (e) {
+        try { fs.writeFileSync(filepath, JSON.stringify(data, null, 2), "utf8"); }
+        catch (err) { console.error(`[PERSISTENCE WRITE ERR ${path.basename(filepath)}]`, err.message); }
+    }
+}
+
+function loadConfig() {
+    let main = safeReadJSON(CONFIG_FILE, {});
+    const autoposts = safeReadJSON(AUTOPOST_FILE, {});
+    const voices = safeReadJSON(VOICE_FILE, {});
+    const statuses = safeReadJSON(STATUS_FILE, {});
+    const youtubes = safeReadJSON(YOUTUBE_FILE, {});
+    const robloxes = safeReadJSON(ROBLOX_FILE, {});
+    const securities = safeReadJSON(SECURITY_FILE, {});
+
+    const allGuildIds = new Set([
+        ...Object.keys(main),
+        ...Object.keys(autoposts),
+        ...Object.keys(voices),
+        ...Object.keys(statuses),
+        ...Object.keys(youtubes),
+        ...Object.keys(robloxes),
+        ...Object.keys(securities)
+    ]);
+
+    for (const gid of allGuildIds) {
+        main[gid] ??= {};
+        if (autoposts[gid]) main[gid].autopost = { ...(main[gid].autopost || {}), ...autoposts[gid] };
+        if (voices[gid]) main[gid].voice247 = { ...(main[gid].voice247 || {}), ...voices[gid] };
+        if (statuses[gid]) main[gid].status = { ...(main[gid].status || {}), ...statuses[gid] };
+        if (youtubes[gid]) main[gid].youtube = { ...(main[gid].youtube || {}), ...youtubes[gid] };
+        if (robloxes[gid]) main[gid].roblox = { ...(main[gid].roblox || {}), ...robloxes[gid] };
+        if (securities[gid]) main[gid].security = { ...(main[gid].security || {}), ...securities[gid] };
+    }
+    return main;
+}
+
+function saveConfig(c) {
+    if (!c || typeof c !== "object") return;
+    safeWriteJSON(CONFIG_FILE, c);
+    try {
+        const autoposts = safeReadJSON(AUTOPOST_FILE, {});
+        const voices = safeReadJSON(VOICE_FILE, {});
+        const statuses = safeReadJSON(STATUS_FILE, {});
+        const youtubes = safeReadJSON(YOUTUBE_FILE, {});
+        const robloxes = safeReadJSON(ROBLOX_FILE, {});
+        const securities = safeReadJSON(SECURITY_FILE, {});
+
+        for (const [gid, gdata] of Object.entries(c)) {
+            if (gdata.autopost) autoposts[gid] = gdata.autopost;
+            if (gdata.voice247) voices[gid] = gdata.voice247;
+            if (gdata.status) statuses[gid] = gdata.status;
+            if (gdata.youtube) youtubes[gid] = gdata.youtube;
+            if (gdata.roblox) robloxes[gid] = gdata.roblox;
+            if (gdata.security) securities[gid] = gdata.security;
+        }
+
+        safeWriteJSON(AUTOPOST_FILE, autoposts);
+        safeWriteJSON(VOICE_FILE, voices);
+        safeWriteJSON(STATUS_FILE, statuses);
+        safeWriteJSON(YOUTUBE_FILE, youtubes);
+        safeWriteJSON(ROBLOX_FILE, robloxes);
+        safeWriteJSON(SECURITY_FILE, securities);
+    } catch (e) {
+        console.error("[SYNC DEDICATED FILES ERR]", e.message);
+    }
+}
+
 const config = loadConfig();
 
 const commands = [
@@ -247,6 +335,30 @@ function startMemberCountRefresh(guild) {
 
 const autoPostTimers = new Map();
 
+async function executeAutoPost(guildId) {
+    const current = config[guildId]?.autopost;
+    if (!current?.enabled || !current.channelId || !current.message) return;
+
+    try {
+        const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+        if (!guild) return;
+        const channel = guild.channels.cache.get(current.channelId) || await guild.channels.fetch(current.channelId).catch(() => null);
+        if (!channel || !channel.isTextBased() || !channel.send) {
+            console.log(`[AUTOPOST] Invalid text channel for guild ${guildId}`);
+            return;
+        }
+        await channel.send({
+            content: current.message,
+            allowedMentions: { parse: [] }
+        });
+        current.lastSentAt = Date.now();
+        saveConfig(config);
+        console.log(`[AUTOPOST] Sent to ${guild.name} / #${channel.name}`);
+    } catch (error) {
+        console.log(`[AUTOPOST ERROR] ${guildId}: ${error.message}`);
+    }
+}
+
 function startAutoPost(guildId) {
     const previous = autoPostTimers.get(guildId);
     if (previous) clearInterval(previous);
@@ -255,42 +367,43 @@ function startAutoPost(guildId) {
     const setting = config[guildId]?.autopost;
     if (!setting?.enabled || !setting.channelId || !setting.message) return;
 
-    // ส่งครั้งแรกหลังตั้งค่า/หลังข้อความล่าสุดครบ 1 ชั่วโมง
-    const timer = setInterval(async () => {
+    // ตรวจสอบว่าถึงเวลาส่งหรือยัง หากบอทเพิ่งรีสตาร์ท หรือยังไม่เคยส่งเลย
+    const intervalMinutes = Math.min(10080, Math.max(1, Number(setting.intervalMinutes) || 60));
+    const intervalMs = intervalMinutes * 60 * 1000;
+    const lastSentAt = Number(setting.lastSentAt || 0);
+    const elapsed = Date.now() - lastSentAt;
+
+    if (lastSentAt === 0 || elapsed >= intervalMs) {
+        // ครบกำหนดแล้ว หรือเพิ่งตั้งค่าใหม่ -> ส่งทันทีหลังบอทออนไลน์ 3 วินาที
+        setTimeout(() => {
+            executeAutoPost(guildId).catch(() => {});
+        }, 3000);
+    }
+
+    // ลูปตรวจสอบทุก 15 วินาที เพื่อความแม่นยำสูง
+    const timer = setInterval(() => {
         const current = config[guildId]?.autopost;
         if (!current?.enabled) {
             clearInterval(timer);
             autoPostTimers.delete(guildId);
             return;
         }
-        const intervalMinutes = Math.min(10080, Math.max(1, Number(current.intervalMinutes) || 60));
-        const lastSentAt = Number(current.lastSentAt || Date.now());
-        if (Date.now() - lastSentAt < intervalMinutes * 60 * 1000) return;
-
-        try {
-            const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId);
-            const channel = guild.channels.cache.get(current.channelId) || await guild.channels.fetch(current.channelId);
-            if (!channel || !channel.isTextBased() || !channel.send) {
-                console.log(`[AUTOPOST] Invalid text channel for guild ${guildId}`);
-                return;
-            }
-            await channel.send({
-                content: current.message,
-                allowedMentions: { parse: [] }
-            });
-            current.lastSentAt = Date.now();
-            saveConfig(config);
-            console.log(`[AUTOPOST] Sent to ${guild.name} / #${channel.name}`);
-        } catch (error) {
-            console.log(`[AUTOPOST ERROR] ${guildId}: ${error.message}`);
+        const curIntervalMs = Math.min(10080, Math.max(1, Number(current.intervalMinutes) || 60)) * 60 * 1000;
+        const curLastSent = Number(current.lastSentAt || 0);
+        if (Date.now() - curLastSent >= curIntervalMs) {
+            executeAutoPost(guildId).catch(() => {});
         }
-    }, 30 * 1000);
+    }, 15 * 1000);
+
     autoPostTimers.set(guildId, timer);
 }
 
 function startConfiguredAutoPosts() {
     for (const [guildId, settings] of Object.entries(config)) {
-        if (settings?.autopost?.enabled) startAutoPost(guildId);
+        if (settings?.autopost?.enabled) {
+            console.log(`[AUTOPOST] Resuming persistent auto-post for guild ${guildId} (every ${settings.autopost.intervalMinutes}m)`);
+            startAutoPost(guildId);
+        }
     }
 }
 
@@ -821,12 +934,12 @@ client.on("interactionCreate", async interaction => {
                 channelId: channel.id,
                 message,
                 intervalMinutes,
-                lastSentAt: Date.now()
+                lastSentAt: 0
             };
             saveConfig(config);
             startAutoPost(interaction.guild.id);
             return interaction.reply({
-                content: "✅ ตั้งข้อความอัตโนมัติสำเร็จแล้ว\\n📍 ห้อง: " + channel + "\\n⏰ ส่งซ้ำทุก " + intervalMinutes + " นาที" + (intervalMinutes % 60 === 0 ? " (" + (intervalMinutes / 60) + " ชั่วโมง)" : "") + "\\n📨 ส่งครั้งแรกเมื่อครบช่วงเวลาที่ตั้งไว้\\n🛑 ใช้ `/autopost stop` เพื่อปิด",
+                content: `✅ **ตั้งข้อความอัตโนมัติสำเร็จแล้ว**\n📍 **ห้อง:** ${channel}\n⏰ **ความถี่:** ส่งซ้ำทุก ${intervalMinutes} นาที${intervalMinutes % 60 === 0 ? ` (${intervalMinutes / 60} ชั่วโมง)` : ""}\n📨 **ระบบเริ่มทำงานทันที และจำค่าถาวร 24/7 แม้บอทจะรีสตาร์ท**\n🛑 ใช้ \`/autopost stop\` เพื่อปิดการทำงาน`,
                 ephemeral: true,
                 allowedMentions: { parse: [] }
             });
@@ -838,15 +951,17 @@ client.on("interactionCreate", async interaction => {
             autoPostTimers.delete(interaction.guild.id);
             if (config[interaction.guild.id].autopost) config[interaction.guild.id].autopost.enabled = false;
             saveConfig(config);
-            return interaction.reply({ content: "🛑 ปิดข้อความอัตโนมัติแล้ว", ephemeral: true });
+            return interaction.reply({ content: "🛑 ปิดข้อความอัตโนมัติเรียบร้อยแล้ว", ephemeral: true });
         }
 
         const setting = config[interaction.guild.id]?.autopost;
         if (!setting?.enabled) {
             return interaction.reply({ content: "ℹ️ ยังไม่ได้เปิดใช้ ใช้ `/autopost setup` เพื่อตั้งค่า", ephemeral: true });
         }
+        const nextIn = setting.lastSentAt ? Math.max(0, Math.floor(((Number(setting.lastSentAt) + (Number(setting.intervalMinutes) * 60 * 1000)) - Date.now()) / 1000)) : 0;
+        const nextMin = Math.ceil(nextIn / 60);
         return interaction.reply({
-            content: "✅ เปิดใช้งานอยู่\\n📍 ห้อง: <#" + setting.channelId + ">\\n⏰ ส่งทุก " + (Number(setting.intervalMinutes) || 60) + " นาที",
+            content: `✅ **สถานะข้อความอัตโนมัติ: กำลังทำงาน**\n📍 **ห้อง:** <#${setting.channelId}>\n⏰ **ความถี่:** ทุก ${Number(setting.intervalMinutes) || 60} นาที\n⏳ **รอบถัดไป:** ในอีกประมาณ ${nextMin} นาที\n🔒 **สถานะความทนทาน:** ติดถาวร แม้บอทรีสตาร์ท\n💬 **ข้อความ:**\n>>> ${setting.message.slice(0, 500)}`,
             ephemeral: true
         });
     }
