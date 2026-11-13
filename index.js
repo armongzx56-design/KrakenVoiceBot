@@ -196,10 +196,12 @@ const commands = [
         .addSubcommand(sub => sub.setName("list").setDescription("[ 📜 ] ดูช่อง YouTube ที่ติดตาม"))
         .addSubcommand(sub => sub.setName("test").setDescription("[ 🧪 ] ทดสอบการแจ้งเตือน YouTube")),
     new SlashCommandBuilder()
-        .setName("roblox").setDescription("[ 🤖 ] ระบบแจ้งเตือนข่าวสาร Roblox")
-        .addSubcommand(s => s.setName("setup").setDescription("[ ⚙️ ] ตั้งห้องแจ้งเตือน")
-            .addChannelOption(o => o.setName("channel").setDescription("ห้องข่าว").addChannelTypes(ChannelType.GuildText).setRequired(true)))
-        .addSubcommand(s => s.setName("test").setDescription("[ 🧪 ] ทดสอบระบบ")),
+        .setName("roblox").setDescription("[ 🤖 ] ระบบแจ้งเตือนเวอร์ชัน Roblox")
+        .addSubcommand(s => s.setName("setup").setDescription("[ ⚙️ ] ตั้งห้องแจ้งเตือนเวอร์ชันใหม่")
+            .addChannelOption(o => o.setName("channel").setDescription("ห้องแจ้งเตือน").addChannelTypes(ChannelType.GuildText).setRequired(true)))
+        .addSubcommand(s => s.setName("test").setDescription("[ 🧪 ] ทดสอบระบบแจ้งเตือน"))
+        .addSubcommand(s => s.setName("check").setDescription("[ 🔍 ] ดูเวอร์ชันปัจจุบันของ Roblox"))
+        .addSubcommand(s => s.setName("stop").setDescription("[ 🛑 ] ปิดการแจ้งเตือนเวอร์ชัน Roblox")),
     new SlashCommandBuilder()
         .setName("mod").setDescription("[ 🛡️ ] คำสั่งสำหรับทีมงานดูแลและจัดการสมาชิก")
         .addSubcommand(x => x.setName("warn").setDescription("[ ⚠️ ] เตือนสมาชิก").addUserOption(o=>o.setName("member").setDescription("สมาชิก").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("เหตุผล").setRequired(false)))
@@ -1414,16 +1416,47 @@ client.on("interactionCreate", async interaction => {
 
     if (interaction.commandName === "roblox") {
         if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
-        const sub=interaction.options.getSubcommand();
-        if (sub === "setup") { const ch=interaction.options.getChannel("channel",true); config[interaction.guild.id] ??= {}; config[interaction.guild.id].roblox={channelId:ch.id,enabled:true}; saveConfig(config); return interaction.reply({content:"✅ ตั้งแจ้งเตือน Roblox ที่ " + ch,ephemeral:true}); }
-        if (!config[interaction.guild.id]?.roblox?.channelId) return interaction.reply({content:"❌ ใช้ /roblox setup ก่อน",ephemeral:true});
-        await interaction.deferReply({ephemeral:true});
-        try {
-            await sendTestUpdate(client, config, interaction.guild.id);
-            return interaction.editReply("✅ ส่งข้อความทดสอบ Roblox Update ไปยังห้องที่ตั้งค่าไว้แล้ว");
-        } catch (error) {
-            console.log("[ROBLOX TEST ERROR]", error.message);
-            return interaction.editReply("❌ ทดสอบไม่สำเร็จ: " + error.message);
+        const sub = interaction.options.getSubcommand();
+        if (sub === "setup") {
+            const ch = interaction.options.getChannel("channel", true);
+            config[interaction.guild.id] ??= {};
+            config[interaction.guild.id].roblox = {
+                ...(config[interaction.guild.id].roblox || {}),
+                channelId: ch.id,
+                enabled: true
+            };
+            saveConfig(config);
+            return interaction.reply({content: "✅ ตั้งห้องแจ้งเตือนเวอร์ชัน Roblox ที่ " + ch + " สำเร็จ\n(บอทจะแจ้งเตือนอัตโนมัติเฉพาะเมื่อมีเวอร์ชัน/แพตช์ใหม่ของ Roblox)", ephemeral: true});
+        }
+        if (sub === "stop") {
+            if (config[interaction.guild.id]?.roblox) {
+                config[interaction.guild.id].roblox.enabled = false;
+                saveConfig(config);
+            }
+            return interaction.reply({content: "🛑 ปิดระบบแจ้งเตือนเวอร์ชัน Roblox สำเร็จ", ephemeral: true});
+        }
+        if (sub === "check") {
+            await interaction.deferReply({ephemeral: false});
+            try {
+                const data = await fetchRobloxVersions();
+                const embed = makeVersionEmbed(data, [], false)
+                    .setTitle("🔍 เวอร์ชันปัจจุบันของ Roblox")
+                    .setDescription("ข้อมูลเวอร์ชันล่าสุดของทุกแพลตฟอร์ม (Windows, Mobile, Mac)");
+                return interaction.editReply({embeds: [embed]});
+            } catch (err) {
+                return interaction.editReply("❌ ไม่สามารถดึงข้อมูลเวอร์ชันได้: " + err.message);
+            }
+        }
+        if (sub === "test") {
+            if (!config[interaction.guild.id]?.roblox?.channelId) return interaction.reply({content:"❌ ใช้ /roblox setup ก่อน",ephemeral:true});
+            await interaction.deferReply({ephemeral:true});
+            try {
+                await sendTestUpdate(client, config, interaction.guild.id);
+                return interaction.editReply("✅ ส่งข้อความทดสอบการแจ้งเตือนเวอร์ชันใหม่ของ Roblox ไปยังห้องที่ตั้งค่าไว้แล้ว");
+            } catch (error) {
+                console.log("[ROBLOX TEST ERROR]", error.message);
+                return interaction.editReply("❌ ทดสอบไม่สำเร็จ: " + error.message);
+            }
         }
     }
 
@@ -1667,7 +1700,7 @@ process.on("uncaughtException", error => {
 
 const { startSecurity, moderate, sendLog, settingsFor } = require("./systems/security");
 const { startDashboard } = require("./web/dashboard");
-const { startRobloxUpdates, sendTestUpdate } = require("./systems/robloxUpdates");
+const { startRobloxUpdates, sendTestUpdate, fetchRobloxVersions, makeVersionEmbed } = require("./systems/robloxUpdates");
 const { addSource: addYouTubeSource, removeSource: removeYouTubeSource, sendTestUpdate: sendYouTubeTest, startYouTubeNotifications } = require("./systems/youtubeNotifications");
 startDashboard({ client, config, saveConfig, formatUptime });
 
