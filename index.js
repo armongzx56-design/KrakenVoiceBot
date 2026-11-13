@@ -382,6 +382,95 @@ function resolveMessageEmojisAndFormatting(text, guild = null) {
     return formatted;
 }
 
+// นำเข้าอีโมจิ Nitro ภายนอกเข้าสู่เซิร์ฟเวอร์อัตโนมัติ เพื่อให้แสดงผลได้ทั้งในข้อความบอทและการดูตัวอย่าง
+async function autoImportExternalEmojis(text, guild) {
+    if (!text || !guild || !guild.emojis) return text;
+
+    const matches = [...text.matchAll(/<(a)?:([a-zA-Z0-9_~]+):(\d+)>/g)];
+    if (!matches.length) return text;
+
+    let updatedText = text;
+
+    for (const match of matches) {
+        const fullTag = match[0];
+        const isAnimated = match[1] === "a";
+        const name = match[2];
+        const id = match[3];
+
+        if (guild.emojis.cache.has(id)) continue;
+        if (client.application?.emojis?.cache?.has(id)) continue;
+        if (client.emojis?.cache?.has(id)) continue;
+
+        const alreadyImported = guild.emojis.cache.find(e => e.name.toLowerCase() === name.toLowerCase());
+        if (alreadyImported) {
+            updatedText = updatedText.replaceAll(fullTag, `<${alreadyImported.animated ? "a" : ""}:${alreadyImported.name}:${alreadyImported.id}>`);
+            continue;
+        }
+
+        try {
+            const extUrl = `https://cdn.discordapp.com/emojis/${id}.${isAnimated ? "gif" : "png"}`;
+            const cleanName = name.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 32);
+            const created = await guild.emojis.create({
+                attachment: extUrl,
+                name: cleanName,
+                reason: "Auto-imported by KrakenVoiceBot for Autopost"
+            });
+            console.log(`[EMOJI AUTO-IMPORTED] ${name} -> <${created.animated ? "a" : ""}:${created.name}:${created.id}>`);
+            updatedText = updatedText.replaceAll(fullTag, `<${created.animated ? "a" : ""}:${created.name}:${created.id}>`);
+        } catch (err) {
+            console.log(`[EMOJI AUTO-IMPORT NOTE] ${name} (${id}): ${err.message}`);
+        }
+    }
+
+    return updatedText;
+}
+
+// ส่งข้อความผ่าน Webhook เพื่อให้ Discord เรนเดอร์อีโมจิ Nitro จากทุกเซิร์ฟเวอร์ได้ 100%
+async function sendChannelMessage(channel, content, allowedMentions = { parse: [] }) {
+    if (!channel || !channel.isTextBased()) return null;
+
+    const hasCustomEmojis = /<a?:[a-zA-Z0-9_~]+:\d+>/.test(content);
+
+    if (hasCustomEmojis && channel.fetchWebhooks && channel.guild) {
+        try {
+            const botMember = channel.guild.members.me || channel.guild.members.cache.get(client.user.id);
+            const canManageWebhooks = botMember ? channel.permissionsFor(botMember)?.has(PermissionsBitField.Flags.ManageWebhooks) : true;
+
+            if (canManageWebhooks) {
+                const webhooks = await channel.fetchWebhooks().catch(() => null);
+                let webhook = webhooks?.find(wh => wh.owner?.id === client.user.id && wh.token);
+
+                if (!webhook) {
+                    webhook = await channel.createWebhook({
+                        name: client.user.username,
+                        avatar: client.user.displayAvatarURL({ dynamic: true }),
+                        reason: "Autopost Webhook for Nitro Emojis"
+                    }).catch(err => {
+                        console.log("[WEBHOOK CREATE ERR]", err.message);
+                        return null;
+                    });
+                }
+
+                if (webhook) {
+                    return await webhook.send({
+                        content,
+                        username: client.user.username,
+                        avatarURL: client.user.displayAvatarURL({ dynamic: true }),
+                        allowedMentions
+                    });
+                }
+            }
+        } catch (err) {
+            console.log("[WEBHOOK DISPATCH ERR]", err.message);
+        }
+    }
+
+    return await channel.send({
+        content,
+        allowedMentions
+    });
+}
+
 const autoPostTimers = new Map();
 
 async function executeAutoPost(guildId) {
@@ -392,17 +481,25 @@ async function executeAutoPost(guildId) {
         const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
         if (!guild) return;
         const channel = guild.channels.cache.get(current.channelId) || await guild.channels.fetch(current.channelId).catch(() => null);
-        if (!channel || !channel.isTextBased() || !channel.send) {
+        if (!channel || !channel.isTextBased()) {
             console.log(`[AUTOPOST] Invalid text channel for guild ${guildId}`);
             return;
         }
 
-        const finalContent = resolveMessageEmojisAndFormatting(current.message, guild);
+        let finalContent = resolveMessageEmojisAndFormatting(current.message, guild);
 
-        await channel.send({
-            content: finalContent,
-            allowedMentions: { parse: [] }
-        });
+        try {
+            const importedContent = await autoImportExternalEmojis(finalContent, guild);
+            if (importedContent !== finalContent) {
+                finalContent = importedContent;
+                current.message = importedContent;
+                saveConfig(config);
+            }
+        } catch (importErr) {
+            console.log("[AUTOPOST IMPORT ERR]", importErr.message);
+        }
+
+        await sendChannelMessage(channel, finalContent, { parse: [] });
         current.lastSentAt = Date.now();
         saveConfig(config);
         console.log(`[AUTOPOST] Sent to ${guild.name} / #${channel.name}`);
@@ -985,11 +1082,19 @@ client.on("interactionCreate", async interaction => {
             if (!rawMessage) return interaction.reply({ content: "❌ กรุณาระบุข้อความ", ephemeral: true });
             if (intervalMinutes < 1 || intervalMinutes > 10080) return interaction.reply({ content: "❌ ตั้งเวลาได้ตั้งแต่ 1 ถึง 10080 นาที (7 วัน)", ephemeral: true });
 
+            await interaction.deferReply({ ephemeral: true });
+
             if (interaction.guild.emojis.cache.size === 0) {
                 await interaction.guild.emojis.fetch().catch(() => {});
             }
 
-            const formattedMessage = resolveMessageEmojisAndFormatting(rawMessage, interaction.guild);
+            let formattedMessage = resolveMessageEmojisAndFormatting(rawMessage, interaction.guild);
+
+            try {
+                formattedMessage = await autoImportExternalEmojis(formattedMessage, interaction.guild);
+            } catch (importErr) {
+                console.log("[AUTOPOST SETUP IMPORT ERR]", importErr.message);
+            }
 
             config[interaction.guild.id].autopost = {
                 enabled: true,
@@ -1000,9 +1105,8 @@ client.on("interactionCreate", async interaction => {
             };
             saveConfig(config);
             startAutoPost(interaction.guild.id);
-            return interaction.reply({
+            return interaction.editReply({
                 content: `✅ **ตั้งข้อความอัตโนมัติสำเร็จแล้ว**\n📍 **ห้อง:** ${channel}\n⏰ **ความถี่:** ส่งซ้ำทุก ${intervalMinutes} นาที${intervalMinutes % 60 === 0 ? ` (${intervalMinutes / 60} ชั่วโมง)` : ""}\n📨 **ระบบเริ่มทำงานทันที (จำค่าถาวร 24/7 แม้บอทจะรีสตาร์ท)**\n\n💬 **ตัวอย่างข้อความ:**\n${formattedMessage}\n\n🛑 ใช้ \`/autopost stop\` เพื่อปิดการทำงาน`,
-                ephemeral: true,
                 allowedMentions: { parse: [] }
             });
         }
@@ -1303,9 +1407,7 @@ client.on("interactionCreate", async interaction => {
 
             await interaction.deferReply({ephemeral:true});
 
-            await channel.send({
-                content: announcementContent || "📢 ประกาศ"
-            });
+            await sendChannelMessage(channel, announcementContent || "📢 ประกาศ", { parse: [] });
 
             return interaction.editReply({
                 content:"✅ ส่งประกาศไปที่ <#" + channel.id + "> เรียบร้อยแล้ว",
