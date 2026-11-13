@@ -346,7 +346,7 @@ async function handleVerifyInteraction(interaction, config, saveConfig) {
 
         if (member.roles.cache.has(roleId)) {
             return interaction.reply({
-                content: "ℹ️ คุณผ่านการยืนยันตัวตนเรียบร้อยแล้วค่ะ!",
+                content: "ℹ️ คุณผ่านการยืนยันตัวตนเรียบร้อยแล้วครับ!",
                 ephemeral: true
             });
         }
@@ -363,7 +363,7 @@ async function handleVerifyInteraction(interaction, config, saveConfig) {
 
         // Ephemeral success to the user
         await interaction.reply({
-            content: `✅ ผ่านการยืนยันตัวตนแล้วค่ะ! ยินดีต้อนรับเข้าสู่ **${interaction.guild.name}**`,
+            content: `✅ ผ่านการยืนยันตัวตนแล้วครับ! ยินดีต้อนรับเข้าสู่ **${interaction.guild.name}**`,
             ephemeral: true
         });
 
@@ -386,7 +386,7 @@ async function handleVerifyInteraction(interaction, config, saveConfig) {
 
                 const logEmbed = new EmbedBuilder()
                     .setColor(0x9B59B6)
-                    .setTitle(`${logTitleEmoji} ${interaction.user.username} ผ่านการยืนยันตัวตนแล้วค่ะ!`)
+                    .setTitle(`${logTitleEmoji} ${interaction.user.username} ผ่านการยืนยันตัวตนแล้วครับ!`)
                     .setDescription(
                         `• ${logMemberEmoji} **ผู้เชิญ:** ${inviteInfo.inviterTag} ( \`${inviteInfo.code}\` )\n` +
                         `• ${logUsesEmoji} **จำนวนการใช้:** ${inviteInfo.uses} ครั้ง`

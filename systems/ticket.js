@@ -193,20 +193,29 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
 
         try {
             // Check existing open ticket for user
-            const existing = guild.channels.cache.find(c =>
+            let existing = guild.channels.cache.find(c =>
                 c.type === ChannelType.GuildText &&
                 c.topic?.startsWith("kraken-ticket:" + interaction.user.id + ":")
             );
 
             if (existing) {
+                const fetched = await guild.channels.fetch(existing.id).catch(() => null);
+                if (!fetched) existing = null;
+            }
+
+            if (existing) {
                 return interaction.editReply({
-                    content: `🎫 คุณมีห้อง Ticket ที่ยังเปิดอยู่แล้ว: ${existing}`
+                    content: `<a:437007ticket:1569102283067621499> **คุณมีห้อง Ticket ที่ยังเปิดค้างอยู่แล้วครับ:** ${existing}\n<a:998057pinkarrow:1569102319105089637> หากต้องการเปิดตั๋วใหม่ กรุณากดปุ่ม **[ ปิด Ticket ]** ในห้องเดิมก่อนนะครับ หรือคลิกเข้าห้องเดิมที่ลิงก์ด้านบนได้เลยครับ`
                 });
             }
 
-            // Next counter number (เริ่มขั้นต่ำที่ 500 เพื่อความน่าเชื่อถือระดับมือโปร)
-            const baseCounter = Math.max(Number(tc.ticketCounter || 0), 499);
-            const currentCounter = baseCounter + 1;
+            // Next counter number (เริ่มขั้นต่ำที่ 500 และบวกเพิ่ม 1 ทุกครั้งที่เปิดห้องใหม่)
+            let currentCounter = Number(tc.ticketCounter || 0);
+            if (currentCounter < 500) {
+                currentCounter = 500;
+            } else {
+                currentCounter += 1;
+            }
             tc.ticketCounter = currentCounter;
             saveTicketSettings(guildId, { ticketCounter: currentCounter }, config, saveConfig);
 
@@ -332,7 +341,7 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
             }
 
             return interaction.editReply({
-                content: `✅ เปิด Ticket สำเร็จแล้วค่ะ: ${channel}`
+                content: `✅ **เปิด Ticket สำเร็จแล้วครับ!** <a:437007ticket:1569102283067621499>\n<a:998057pinkarrow:1569102319105089637> **ห้องตั๋วของคุณ:** ${channel}\n*(คลิกที่ชื่อห้องด้านบนเพื่อเข้าห้องได้ทันทีครับ)*`
             });
         } catch (error) {
             console.log("[TICKET CREATE ERROR]", error.message);
@@ -366,7 +375,7 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
 
         if (!userId) {
             return interaction.reply({
-                content: "❌ รูปแบบ User ID ไม่ถูกต้อง",
+                content: "❌ รูปแบบ User ID ไม่ถูกต้องครับ",
                 ephemeral: true
             });
         }
@@ -375,7 +384,7 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
             const member = await guild.members.fetch(userId).catch(() => null);
             if (!member) {
                 return interaction.reply({
-                    content: "❌ ไม่พบสมาชิกคนนี้ในเซิร์ฟเวอร์",
+                    content: "❌ ไม่พบสมาชิกคนนี้ในเซิร์ฟเวอร์ครับ",
                     ephemeral: true
                 });
             }
@@ -389,12 +398,12 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
             });
 
             await interaction.reply({
-                content: `✅ เชิญ <@${member.id}> เข้าสู่ Ticket เรียบร้อยแล้วค่ะ`,
+                content: `✅ **เชิญ <@${member.id}> เข้าสู่ Ticket เรียบร้อยแล้วครับ!** <a:785173catpaw:1569102307155779649>`,
                 ephemeral: true
             });
 
             return interaction.channel.send({
-                content: `👥 <@${member.id}> ได้รับเชิญเข้าสู่ Ticket โดย <@${interaction.user.id}>`,
+                content: `👥 <@${member.id}> ได้รับเชิญเข้าสู่ Ticket โดย <@${interaction.user.id}> ยินดีต้อนรับครับ!`,
                 allowedMentions: { users: [member.id] }
             });
         } catch (err) {
@@ -419,13 +428,13 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
 
         if (!isOwner && !isStaff && !canManage) {
             return interaction.reply({
-                content: "❌ เฉพาะผู้เปิด Ticket หรือทีมงานเท่านั้นที่สามารถปิดห้องนี้ได้",
+                content: "❌ เฉพาะผู้เปิด Ticket หรือทีมงานเท่านั้นที่สามารถปิดห้องนี้ได้ครับ",
                 ephemeral: true
             });
         }
 
         await interaction.reply({
-            content: "🔒 กำลังปิด Ticket ห้องนี้จะถูกลบใน 5 วินาที..."
+            content: "🔒 **กำลังปิด Ticket...** ห้องนี้จะถูกลบใน 5 วินาทีครับ"
         });
 
         return setTimeout(() => {
