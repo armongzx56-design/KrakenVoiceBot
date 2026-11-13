@@ -1480,7 +1480,8 @@ client.on("interactionCreate", async interaction => {
                     fetchExploitStatuses().catch(() => [])
                 ]);
                 const embed = makeVersionEmbed(data, exploits, [], false);
-                return interaction.editReply({embeds: [embed]});
+                const row = makeExecutorActionRow();
+                return interaction.editReply({embeds: [embed], components: [row]});
             } catch (err) {
                 return interaction.editReply("❌ ไม่สามารถดึงข้อมูลเวอร์ชันได้: " + err.message);
             }
@@ -1491,7 +1492,8 @@ client.on("interactionCreate", async interaction => {
                 const platform = interaction.options.getString("platform") || "all";
                 const exploits = await fetchExploitStatuses();
                 const embed = makeExecutorsEmbed(exploits, platform);
-                return interaction.editReply({embeds: [embed]});
+                const row = makeExecutorActionRow();
+                return interaction.editReply({embeds: [embed], components: [row]});
             } catch (err) {
                 return interaction.editReply("❌ ไม่สามารถดึงข้อมูลสถานะตัวรันได้: " + err.message);
             }
@@ -1749,7 +1751,7 @@ process.on("uncaughtException", error => {
 
 const { startSecurity, moderate, sendLog, settingsFor } = require("./systems/security");
 const { startDashboard } = require("./web/dashboard");
-const { startRobloxUpdates, sendTestUpdate, fetchRobloxVersions, fetchExploitStatuses, makeVersionEmbed, makeExecutorsEmbed } = require("./systems/robloxUpdates");
+const { startRobloxUpdates, sendTestUpdate, fetchRobloxVersions, fetchExploitStatuses, makeVersionEmbed, makeExecutorsEmbed, makeExecutorActionRow } = require("./systems/robloxUpdates");
 const { addSource: addYouTubeSource, removeSource: removeYouTubeSource, sendTestUpdate: sendYouTubeTest, startYouTubeNotifications } = require("./systems/youtubeNotifications");
 startDashboard({ client, config, saveConfig, formatUptime });
 

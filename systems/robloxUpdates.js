@@ -1,4 +1,4 @@
-const { EmbedBuilder } = require("discord.js");
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 
 const WEAO_VERSION_URLS = [
     "https://weao.xyz/api/versions/current",
@@ -130,7 +130,7 @@ function makeVersionEmbed(data, exploits = [], changedPlatforms = [], isTest = f
         }
     );
 
-    // ถ้ามีข้อมูล Exploits ให้สรุปสถานะตัวรันยอดนิยม
+    // ถ้ามีข้อมูล Exploits ให้สรุปสถานะตัวรันยอดนิยม (พร้อมลิงก์หน้าดาวน์โหลด)
     if (Array.isArray(exploits) && exploits.length > 0) {
         const total = exploits.length;
         const updated = exploits.filter(x => x.updateStatus).length;
@@ -138,22 +138,27 @@ function makeVersionEmbed(data, exploits = [], changedPlatforms = [], isTest = f
 
         const popularList = exploits.filter(x => POPULAR_EXECUTORS.includes(x.title));
         const popularLines = popularList.map(x => {
-            const statusBadge = x.updateStatus ? "🟢 อัปเดตแล้ว" : "🔴 รออัปเดต";
-            const detectBadge = x.detected ? "⚠️ เสี่ยงแบน" : "🛡️ ปลอดภัย";
-            const costBadge = x.free ? "🆓 ฟรี" : "💵 เสียเงิน";
-            const suncBadge = x.suncPercentage ? ` (${x.suncPercentage}% sUNC)` : "";
-            return `• **${x.title}** [${x.platform}]: ${statusBadge} • ${detectBadge} • ${costBadge}${suncBadge}`;
+            const url = x.websitelink || x.discordlink || "https://whatexpsare.online/";
+            const statusBadge = x.updateStatus ? "🟢" : "🔴";
+            const detectBadge = x.detected ? "⚠️" : "🛡️";
+            const costBadge = x.free ? "🆓" : "💵";
+            const rawScore = x.suncPercentage ?? x.uncPercentage;
+            const suncBadge = rawScore !== undefined && rawScore !== null ? ` \`${rawScore}%\`` : "";
+            const cleanVer = (x.version || "").replace(/^v+/i, "").trim();
+            const ver = cleanVer ? ` \`v${cleanVer}\`` : "";
+            const plat = (x.platform === "Android" || x.platform === "iOS") ? ` [${x.platform}]` : "";
+            return `${statusBadge} ${detectBadge} [**${x.title}**](${url})${plat}${ver} ─ ${costBadge}${suncBadge}`;
         });
 
         embed.addFields(
             {
                 name: "╭── ⚡ สถานะตัวรันยอดนิยม (Popular Executors)",
-                value: `>>> ${popularLines.slice(0, 8).join("\n")}`,
+                value: `>>> ${popularLines.join("\n")}\n\n💡 *คลิกที่ชื่อตัวรัน เพื่อเปิดหน้าดาวน์โหลด / เว็บไซต์ได้ทันที*`,
                 inline: false
             },
             {
-                name: "╭── 📊 สรุปสถิติตัวรันทั้งหมด",
-                value: `>>> • 🟢 **พร้อมใช้งาน:** \`${updated}/${total}\` ตัว\n• 🛡️ **ปลอดภัย (Undetected):** \`${undetected}/${total}\` ตัว\n• 🔍 ดูตัวรันทั้งหมด 31 ตัว ใช้คำสั่ง \`/roblox executors\``,
+                name: "╭── 📊 สรุปสถิติตัวรันทั้งหมด (31 ตัว)",
+                value: `>>> • 🟢 **พร้อมใช้งาน:** \`${updated}/${total}\` ตัว | 🛡️ **ปลอดภัย:** \`${undetected}/${total}\` ตัว\n• 🔍 ดูตัวรันทั้งหมด 31 ตัว ใช้คำสั่ง \`/roblox executors\`\n• 🌐 เว็บไซต์รวม: [whatexpsare.online](https://whatexpsare.online/)`,
                 inline: false
             }
         );
@@ -166,18 +171,37 @@ function makeVersionEmbed(data, exploits = [], changedPlatforms = [], isTest = f
     });
 
     embed.setFooter({
-        text: "WEAO Realtime Tracker • KrakenHub System"
+        text: "WEAO Realtime Tracker • whatexpsare.online • KrakenHub System"
     }).setTimestamp();
 
     return embed;
 }
 
+function makeExecutorActionRow() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setLabel("🌐 เปิดหน้าเว็บ WhatExpsAre.Online")
+            .setStyle(ButtonStyle.Link)
+            .setURL("https://whatexpsare.online/"),
+        new ButtonBuilder()
+            .setLabel("⚡ WEAO Tracker")
+            .setStyle(ButtonStyle.Link)
+            .setURL("https://weao.xyz/")
+    );
+}
+
 function makeExecutorsEmbed(exploits, platformFilter = "all") {
+    const totalUpdated = exploits.filter(x => x.updateStatus).length;
+    const totalSafe = exploits.filter(x => !x.detected).length;
+    const totalFree = exploits.filter(x => x.free).length;
+
     const embed = new EmbedBuilder()
         .setColor(0x00F0FF)
         .setTitle(`${EMOJIS.leftWing} สถานะตัวรัน Roblox ทั้งหมด (Realtime Tracker) ${EMOJIS.rightWing}`)
         .setDescription(
-            `📡 **ระบบตรวจสอบสถานะตัวรัน (Executors) แบบเรียลไทม์ผ่าน WEAO API**\n` +
+            `📡 **ระบบตรวจสอบสถานะตัวรัน (Executors) แบบเรียลไทม์**\n` +
+            `🔗 **เว็บไซต์หลัก:** [whatexpsare.online](https://whatexpsare.online/)\n` +
+            `<a:pinkarrow:1310107692995706900> **คลิกที่ชื่อตัวรัน เพื่อเปิดหน้าดาวน์โหลด / เว็บไซต์ทางการทันที**\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
         );
 
@@ -191,51 +215,62 @@ function makeExecutorsEmbed(exploits, platformFilter = "all") {
     }
 
     const formatItem = (x) => {
+        const url = x.websitelink || x.discordlink || "https://whatexpsare.online/";
         const status = x.updateStatus ? "🟢" : "🔴";
         const detect = x.detected ? "⚠️" : "🛡️";
         const price = x.free ? "🆓" : "💵";
-        const score = x.suncPercentage ? ` \`${x.suncPercentage}% sUNC\`` : (x.uncPercentage ? ` \`${x.uncPercentage}% UNC\`` : "");
-        return `${status} ${detect} **${x.title}** (\`${x.version || "N/A"}\`) • ${price}${score}`;
+        const rawScore = x.suncPercentage ?? x.uncPercentage;
+        const score = rawScore !== undefined && rawScore !== null ? ` \`${rawScore}%\`` : "";
+        const cleanVer = (x.version || "").replace(/^v+/i, "").trim();
+        const ver = cleanVer ? ` \`v${cleanVer}\`` : "";
+        const plat = (x.platform === "Android" || x.platform === "iOS") ? ` [${x.platform}]` : "";
+        return `${status} ${detect} [**${x.title}**](${url})${plat}${ver} ─ ${price}${score}`;
+    };
+
+    const addChunkedFields = (titlePrefix, icon, list) => {
+        if (!list || list.length === 0) return;
+        const chunkSize = 13;
+        if (list.length <= chunkSize) {
+            embed.addFields({
+                name: `╭── ${icon} ${titlePrefix} (${list.length} ตัว)`,
+                value: `>>> ${list.map(formatItem).join("\n")}`,
+                inline: false
+            });
+        } else {
+            const totalParts = Math.ceil(list.length / chunkSize);
+            for (let i = 0; i < list.length; i += chunkSize) {
+                const chunk = list.slice(i, i + chunkSize);
+                const partNum = Math.floor(i / chunkSize) + 1;
+                embed.addFields({
+                    name: `╭── ${icon} ${titlePrefix} (${partNum}/${totalParts}) • [${chunk.length} ตัว]`,
+                    value: `>>> ${chunk.map(formatItem).join("\n")}`,
+                    inline: false
+                });
+            }
+        }
     };
 
     const windows = filtered.filter(x => x.platform === "Windows");
     const mobile = filtered.filter(x => x.platform === "Android" || x.platform === "iOS");
     const mac = filtered.filter(x => x.platform === "Mac");
 
-    if (windows.length > 0) {
-        embed.addFields({
-            name: `╭── 🖥️ Windows Executors (${windows.length} ตัว)`,
-            value: `>>> ${windows.slice(0, 15).map(formatItem).join("\n")}${windows.length > 15 ? `\n...และอีก ${windows.length - 15} ตัว` : ""}`,
-            inline: false
-        });
+    if (platformFilter === "all" || platformFilter.toLowerCase() === "windows") {
+        addChunkedFields("Windows Executors", "🖥️", windows);
     }
-
-    if (mobile.length > 0) {
-        embed.addFields({
-            name: `╭── 📱 Mobile Executors - Android & iOS (${mobile.length} ตัว)`,
-            value: `>>> ${mobile.map(x => formatItem(x) + ` [${x.platform}]`).join("\n")}`,
-            inline: false
-        });
+    if (platformFilter === "all" || platformFilter.toLowerCase() === "mobile") {
+        addChunkedFields("Mobile Executors (Android & iOS)", "📱", mobile);
     }
-
-    if (mac.length > 0) {
-        embed.addFields({
-            name: `╭── 🍎 macOS Executors (${mac.length} ตัว)`,
-            value: `>>> ${mac.map(formatItem).join("\n")}`,
-            inline: false
-        });
+    if (platformFilter === "all" || platformFilter.toLowerCase() === "mac") {
+        addChunkedFields("macOS Executors", "🍎", mac);
     }
-
-    const totalUpdated = exploits.filter(x => x.updateStatus).length;
-    const totalSafe = exploits.filter(x => !x.detected).length;
 
     embed.addFields({
-        name: "╭── 📌 คำอธิบายสัญลักษณ์",
-        value: `>>> 🟢 = อัปเดตพร้อมใช้งาน | 🔴 = ยังไม่อัปเดต\n🛡️ = ปลอดภัย (Undetected) | ⚠️ = ตรวจจับ (Detected)\n🆓 = ฟรี | 💵 = มีค่าบริการ\n**สถิติรวม:** 🟢 \`${totalUpdated}/${exploits.length}\` ตัวรันอัปเดตแล้ว | 🛡️ \`${totalSafe}/${exploits.length}\` ปลอดภัย`,
+        name: "╭── 📌 คำอธิบายสัญลักษณ์ & สถิติรวม",
+        value: `>>> 🟢 = อัปเดตพร้อมใช้งาน | 🔴 = ยังไม่อัปเดต (รอแก้)\n🛡️ = ปลอดภัย (Undetected) | ⚠️ = ตรวจจับ (Detected/เสี่ยง)\n🆓 = ฟรี (${totalFree} ตัว) | 💵 = มีค่าบริการ\n**สถิติรวม 31 ตัว:** 🟢 \`${totalUpdated}/${exploits.length}\` ตัวรันอัปเดตแล้ว | 🛡️ \`${totalSafe}/${exploits.length}\` ปลอดภัย`,
         inline: false
     });
 
-    embed.setFooter({ text: "WEAO Realtime Tracker • KrakenHub System" }).setTimestamp();
+    embed.setFooter({ text: "WEAO Realtime Tracker • whatexpsare.online • KrakenHub System" }).setTimestamp();
     return embed;
 }
 
@@ -252,7 +287,8 @@ async function sendTestUpdate(client, config, guildId) {
     ]);
 
     const embed = makeVersionEmbed(versions, exploits, ["Windows (PC)"], true);
-    await channel.send({ embeds: [embed] });
+    const row = makeExecutorActionRow();
+    await channel.send({ embeds: [embed], components: [row] });
     return versions;
 }
 
@@ -306,7 +342,8 @@ async function check(client, config, saveConfig) {
         if (changedPlatforms.length > 0) {
             const exploits = await fetchExploitStatuses().catch(() => []);
             const embed = makeVersionEmbed(data, exploits, changedPlatforms, false);
-            await channel.send({ embeds: [embed] }).catch(e => console.log("[ROBLOX SEND ERROR]", e.message));
+            const row = makeExecutorActionRow();
+            await channel.send({ embeds: [embed], components: [row] }).catch(e => console.log("[ROBLOX SEND ERROR]", e.message));
 
             // อัปเดตเวอร์ชันล่าสุดที่ตรวจพบ
             rb.versions = {
@@ -336,5 +373,6 @@ module.exports = {
     fetchRobloxVersions,
     fetchExploitStatuses,
     makeVersionEmbed,
-    makeExecutorsEmbed
+    makeExecutorsEmbed,
+    makeExecutorActionRow
 };
