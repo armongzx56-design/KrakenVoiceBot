@@ -83,12 +83,111 @@ function startDashboard({ client, config, saveConfig, formatUptime }) {
 
         // HWID Binding
         if (hwid) {
+            const { EmbedBuilder } = require("discord.js");
+            const { getSettings, sendWhitelistLog } = require("../systems/whitelist");
+
             if (matchedUser) {
                 if (!matchedUser.hwid) {
                     matchedUser.hwid = hwid;
+                    matchedUser.boundAt = now;
                     saveJSON(USERS_FILE, users);
                     console.log(`[WHITELIST HWID] Bound ${matchedUser.discordTag || matchedUserId} to HWID ${hwid}`);
+
+                    // ส่ง Log แจ้งเตือนลงห้อง Log ในดิสคอร์ด
+                    try {
+                        const bindLogEmbed = new EmbedBuilder()
+                            .setColor(0x57F287)
+                            .setTitle("💻 มีการผูก HWID สำเร็จ (HWID Bound)")
+                            .addFields(
+                                { name: "👤 สมาชิก (User)", value: `<@${matchedUserId}> (\`${matchedUser.discordTag || matchedUserId}\`)`, inline: true },
+                                { name: "🆔 Discord ID", value: `\`${matchedUserId}\``, inline: true },
+                                { name: "🔑 คีย์ (Key)", value: `||${key}||`, inline: true },
+                                { name: "🖥️ Hardware ID (HWID)", value: `\`${hwid}\``, inline: false },
+                                { name: "📅 วันหมดอายุ (Expires)", value: `<t:${Math.floor(expiresAt / 1000)}:R>`, inline: true },
+                                { name: "🛡️ สถานะ (Status)", value: "✅ ยืนยันสิทธิ์และผูกเครื่องสำเร็จ พร้อมใช้งานในเกม", inline: true }
+                            )
+                            .setFooter({ text: "KrakenHub Whitelist Security • HWID Binder Logger", iconURL: client?.user?.displayAvatarURL?.() })
+                            .setTimestamp();
+
+                        if (client?.guilds?.cache) {
+                            for (const guild of client.guilds.cache.values()) {
+                                const settings = getSettings(config, guild.id);
+                                guild.members.fetch(matchedUserId).then(member => {
+                                    if (member?.user?.displayAvatarURL) {
+                                        bindLogEmbed.setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }));
+                                    }
+                                    sendWhitelistLog(client, guild, settings, bindLogEmbed).catch(() => {});
+                                }).catch(() => {
+                                    sendWhitelistLog(client, guild, settings, bindLogEmbed).catch(() => {});
+                                });
+                            }
+                        }
+                    } catch (logErr) {
+                        console.error("[WHITELIST HWID BIND LOG ERROR]", logErr.message);
+                    }
                 } else if (matchedUser.hwid !== hwid) {
+                    // แจ้งเตือนเมื่อมีการพยายามรันจากเครื่องอื่น
+                    try {
+                        const mismatchEmbed = new EmbedBuilder()
+                            .setColor(0xED4245)
+                            .setTitle("⚠️ ตรวจพบการพยายามใช้คีย์ข้ามเครื่อง (HWID Mismatch)")
+                            .addFields(
+                                { name: "👤 เจ้าของคีย์ (Owner)", value: `<@${matchedUserId}> (\`${matchedUser.discordTag || matchedUserId}\`)`, inline: true },
+                                { name: "🆔 Discord ID", value: `\`${matchedUserId}\``, inline: true },
+                                { name: "🔑 คีย์ (Key)", value: `||${key}||`, inline: true },
+                                { name: "🔒 HWID ที่ผูกไว้เดิม", value: `\`${matchedUser.hwid}\``, inline: false },
+                                { name: "🚫 HWID ของเครื่องที่พยายามรัน", value: `\`${hwid}\``, inline: false },
+                                { name: "💡 วิธีแก้ไข", value: "ให้ผู้ใช้กดปุ่ม **Reset HWID** ในดิสคอร์ดก่อนเปลี่ยนเครื่อง", inline: false }
+                            )
+                            .setFooter({ text: "KrakenHub Whitelist Security • Warning Logger", iconURL: client?.user?.displayAvatarURL?.() })
+                            .setTimestamp();
+
+                        if (client?.guilds?.cache) {
+                            for (const guild of client.guilds.cache.values()) {
+                                const settings = getSettings(config, guild.id);
+                                sendWhitelistLog(client, guild, settings, mismatchEmbed).catch(() => {});
+                            }
+                        }
+                    } catch (_) {}
+
+                    return res.json({
+                        valid: false,
+                        error: "HWID mismatch. Please reset HWID in Discord bot.",
+                        hwidLocked: true
+                    });
+                }
+            } else if (foundKey) {
+                if (!foundKey.hwid) {
+                    foundKey.hwid = hwid;
+                    foundKey.boundAt = now;
+                    saveJSON(KEYS_FILE, keys);
+                    console.log(`[WHITELIST HWID] Bound raw key ${key} to HWID ${hwid}`);
+
+                    try {
+                        const bindLogEmbed = new EmbedBuilder()
+                            .setColor(0x57F287)
+                            .setTitle("💻 มีการผูก HWID สำเร็จ (HWID Bound)")
+                            .addFields(
+                                { name: "👤 สมาชิก (User)", value: "`Unlinked / Guest`", inline: true },
+                                { name: "🆔 Discord ID", value: "`N/A`", inline: true },
+                                { name: "🔑 คีย์ (Key)", value: `||${key}||`, inline: true },
+                                { name: "🖥️ Hardware ID (HWID)", value: `\`${hwid}\``, inline: false },
+                                { name: "📅 วันหมดอายุ (Expires)", value: `<t:${Math.floor(expiresAt / 1000)}:R>`, inline: true },
+                                { name: "🛡️ สถานะ (Status)", value: "✅ ยืนยันสิทธิ์และผูกเครื่องสำเร็จ พร้อมใช้งานในเกม", inline: true }
+                            )
+                            .setFooter({ text: "KrakenHub Whitelist Security • HWID Binder Logger", iconURL: client?.user?.displayAvatarURL?.() })
+                            .setTimestamp();
+
+                        if (client?.guilds?.cache) {
+                            for (const guild of client.guilds.cache.values()) {
+                                const settings = getSettings(config, guild.id);
+                                sendWhitelistLog(client, guild, settings, bindLogEmbed).catch(() => {});
+                            }
+                        }
+                    } catch (logErr) {
+                        console.error("[WHITELIST HWID BIND LOG ERROR]", logErr.message);
+                    }
+                } else if (foundKey.hwid !== hwid) {
                     return res.json({
                         valid: false,
                         error: "HWID mismatch. Please reset HWID in Discord bot.",
