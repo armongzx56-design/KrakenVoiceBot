@@ -204,8 +204,9 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
                 });
             }
 
-            // Next counter number
-            const currentCounter = Number(tc.ticketCounter || 0) + 1;
+            // Next counter number (เริ่มขั้นต่ำที่ 500 เพื่อความน่าเชื่อถือระดับมือโปร)
+            const baseCounter = Math.max(Number(tc.ticketCounter || 0), 499);
+            const currentCounter = baseCounter + 1;
             tc.ticketCounter = currentCounter;
             saveTicketSettings(guildId, { ticketCounter: currentCounter }, config, saveConfig);
 
