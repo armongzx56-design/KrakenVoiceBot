@@ -158,9 +158,9 @@ async function resolveVipRole(guild, settings, config, saveConfig) {
     // ถ้ายังไม่มี หรือหาไม่เจอใน cache ให้ลอง fetch guild roles
     try {
         if (guild.roles.cache.size <= 2) {
-            await guild.roles.fetch().catch(() => {});
+            await guild.roles.fetch().catch(() => { });
         }
-    } catch (_) {}
+    } catch (_) { }
 
     // ค้นหายศ VIP / Buyer ในเซิร์ฟเวอร์
     const autoRole = guild.roles.cache.find(r => {
@@ -214,7 +214,7 @@ async function sendWhitelistLog(client, guild, settings, embed) {
                         )
                     );
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
         if (targetChannel && (!settings.logChannelId || settings.logChannelId !== targetChannel.id)) {
@@ -249,7 +249,7 @@ async function sendFailedRedeemLog(client, guild, settings, user, attemptedKey, 
         .setFooter({ text: "KrakenHub Whitelist Security • Failed Logger", iconURL: client?.user?.displayAvatarURL?.() })
         .setTimestamp();
 
-    await sendWhitelistLog(client, guild, settings, failEmbed).catch(() => {});
+    await sendWhitelistLog(client, guild, settings, failEmbed).catch(() => { });
 }
 
 async function handleWhitelistInteraction(interaction, config, saveConfig) {
@@ -404,7 +404,7 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
             .setFooter({ text: "KrakenHub Whitelist Security • Logger", iconURL: interaction.client?.user?.displayAvatarURL?.() })
             .setTimestamp();
 
-        sendWhitelistLog(interaction.client, interaction.guild, settings, logEmbed).catch(() => {});
+        sendWhitelistLog(interaction.client, interaction.guild, settings, logEmbed).catch(() => { });
 
         const successEmbed = new EmbedBuilder()
             .setColor(0x57F287)
@@ -439,11 +439,19 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
             });
         }
 
-        let loaderCode = settings.scriptLoader || 'loadstring(game:HttpGet("https://tinyurl.com/KrakenHubV2"))()';
-        if (loaderCode.includes("KrakenHub_Loader.luau")) {
-            loaderCode = 'loadstring(game:HttpGet("https://tinyurl.com/KrakenHubV2"))()';
+        let loaderCode = settings.scriptLoader || 'loadstring(game:HttpGet("https://gist.githubusercontent.com/MacHub09/76ea573e3e472a8854d4f2dea5944d01/raw/c2175ee3808e846c9baa6c96c5e2a19a2b7e194b/Loaders"))()';
+        if (loaderCode.includes("KrakenHub_Loader.luau") || loaderCode.includes("tinyurl.com/KrakenHubV2")) {
+            loaderCode = 'loadstring(game:HttpGet("https://gist.githubusercontent.com/MacHub09/76ea573e3e472a8854d4f2dea5944d01/raw/c2175ee3808e846c9baa6c96c5e2a19a2b7e194b/Loaders"))()';
         }
-        const executeExample = `-- [ KrakenHub Official Loader ]\n_G.KrakenKey = "${user.key}";\n${loaderCode}`;
+
+        // กรองโค้ดที่อาจมี placeholder ติดมา เช่น getfenv().key = "ใส่ครีย์"
+        const cleanLoader = loaderCode
+            .split('\n')
+            .filter(line => !line.match(/(getfenv|getgenv)\(\)\.key\s*=/i) && !line.match(/_G\.KrakenKey\s*=/i))
+            .join('\n')
+            .trim();
+
+        const executeExample = `-- [ KrakenHub Official Loader ]\ngetgenv().key = "${user.key}";\ngetfenv().key = "${user.key}";\n_G.KrakenKey = "${user.key}";\n\n${cleanLoader}`;
 
         const scriptEmbed = new EmbedBuilder()
             .setColor(0x5865F2)
@@ -549,7 +557,7 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
             .setFooter({ text: "KrakenHub Whitelist Security • HWID Logger", iconURL: interaction.client?.user?.displayAvatarURL?.() })
             .setTimestamp();
 
-        sendWhitelistLog(interaction.client, interaction.guild, settings, hwidLogEmbed).catch(() => {});
+        sendWhitelistLog(interaction.client, interaction.guild, settings, hwidLogEmbed).catch(() => { });
 
         const resetEmbed = new EmbedBuilder()
             .setColor(0xFEE75C)

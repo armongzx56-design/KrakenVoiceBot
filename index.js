@@ -14,8 +14,19 @@ const {
     ButtonStyle,
     StringSelectMenuBuilder,
     PermissionsBitField,
-    WebhookClient
+    WebhookClient,
+    DefaultWebSocketManagerOptions
 } = require("discord.js");
+
+// Discord VR Status Identification (Meta Quest / VR Headset Badge)
+DefaultWebSocketManagerOptions.identifyProperties = {
+    os: "android",
+    browser: "Discord VR",
+    device: "Discord VR",
+    $os: "android",
+    $browser: "Discord VR",
+    $device: "Discord VR"
+};
 
 const fs = require("fs");
 const path = require("path");
@@ -35,7 +46,17 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildInvites
-    ]
+    ],
+    ws: {
+        properties: {
+            os: "android",
+            browser: "Discord VR",
+            device: "Discord VR",
+            $os: "android",
+            $browser: "Discord VR",
+            $device: "Discord VR"
+        }
+    }
 });
 
 const startedAt = Date.now();
@@ -173,7 +194,8 @@ const commands = [
                 .addChoices({name:"Playing",value:"Playing"},{name:"Watching",value:"Watching"},{name:"Listening",value:"Listening"},{name:"Competing",value:"Competing"},{name:"Streaming",value:"Streaming"}))
             .addStringOption(o => o.setName("text").setDescription("ข้อความ").setRequired(true))
             .addStringOption(o => o.setName("url").setDescription("ลิงก์ Twitch หรือ YouTube สำหรับสถานะ Streaming").setRequired(false)))
-        .addSubcommand(s => s.setName("clear").setDescription("[ 🗑️ ] ล้างสถานะ")),
+        .addSubcommand(s => s.setName("clear").setDescription("[ 🗑️ ] ล้างสถานะ"))
+        .addSubcommand(s => s.setName("vr").setDescription("[ 🥽 ] ตรวจสอบสถานะการเชื่อมต่อ VR Gateway (Meta Quest)")),
     new SlashCommandBuilder()
         .setName("ticket").setDescription("[ 🎫 ] ระบบจัดการตั๋วช่วยเหลือ (Ticket)")
         .addSubcommand(s => s.setName("setup").setDescription("[ ⚙️ ] ตั้งค่า Ticket Panel")
@@ -253,6 +275,14 @@ const commands = [
         .addChannelOption(o => o.setName("notify").setDescription("ห้องสำหรับบันทึก Log / Transcript").addChannelTypes(ChannelType.GuildText).setRequired(false))
         .addStringOption(o => o.setName("image").setDescription("ลิงก์รูปภาพ Banner ใน Embed").setRequired(false)),
     new SlashCommandBuilder()
+        .setName("setup-vr")
+        .setDescription("[ 🥽 ] ตั้งค่าระบบเปิดสถานะ VR Badge (สไตล์ Kraken)")
+        .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งแผง VR Badge").addChannelTypes(ChannelType.GuildText).setRequired(true))
+        .addRoleOption(o => o.setName("role").setDescription("ยศที่จะมอบให้เมื่อเปิดสถานะ VR").setRequired(false))
+        .addChannelOption(o => o.setName("log").setDescription("ห้องสำหรับส่งบันทึก Log การเปิด VR Badge").addChannelTypes(ChannelType.GuildText).setRequired(false))
+        .addStringOption(o => o.setName("oauth_url").setDescription("ลิงก์ Authorize กำหนดเอง (ถ้ามี)").setRequired(false))
+        .addStringOption(o => o.setName("image").setDescription("ลิงก์รูปภาพ Banner ใน Embed").setRequired(false)),
+    new SlashCommandBuilder()
         .setName("security").setDescription("[ 🔒 ] จัดการระบบความปลอดภัย Anti-Raid / Anti-Spam / Anti-Webhook")
         .addSubcommand(s => s.setName("status").setDescription("[ 📊 ] ดูสถานะการตั้งค่าความปลอดภัยของเซิร์ฟเวอร์"))
         .addSubcommand(s => s.setName("webhook").setDescription("[ 🛡️ ] ตั้งค่าระบบป้องกันสแปม Webhook (Anti-Webhook Spam)")
@@ -261,6 +291,8 @@ const commands = [
             .addIntegerOption(o => o.setName("seconds").setDescription("กรอบเวลาตรวจจับ (วินาที เช่น 5)").setMinValue(2).setMaxValue(30).setRequired(false))
             .addBooleanOption(o => o.setName("auto_delete").setDescription("ลบ/เพิกถอน Webhook อัตโนมัติเมื่อตรวจพบสแปม (แนะนำเปิด)").setRequired(false))
             .addBooleanOption(o => o.setName("block_mass_mentions").setDescription("บล็อก Webhook ที่แท็ก @everyone/@here").setRequired(false)))
+        .addSubcommand(s => s.setName("antieveryone").setDescription("[ 🔨 ] ตั้งค่าระบบแบนคนแท็ก @everyone (สงวนสิทธิ์เฉพาะหัวดิส)")
+            .addBooleanOption(o => o.setName("enabled").setDescription("เปิด/ปิดระบบแบนคนแท็ก @everyone").setRequired(true)))
         .addSubcommand(s => s.setName("log").setDescription("[ 📜 ] ตั้งค่าห้องสำหรับบันทึก Security Logs")
             .addChannelOption(o => o.setName("channel").setDescription("เลือกห้อง Log").addChannelTypes(ChannelType.GuildText).setRequired(true)))
         .addSubcommand(s => s.setName("test").setDescription("[ 🧪 ] ทดสอบส่ง Log ความปลอดภัย")),
@@ -793,6 +825,7 @@ client.once("clientReady", async () => {
     startYouTubeNotifications(client, config, saveConfig);
     startSecurity(client, config, saveConfig);
     startVerify(client, config, saveConfig);
+    startVrBadge(client, config, saveConfig);
 });
 
 const TICKET_TYPES = {
@@ -961,6 +994,13 @@ const {
     saveTicketSettings
 } = require("./systems/ticket");
 
+const {
+    startVrBadge,
+    sendVrPanel,
+    handleVrInteraction,
+    saveVrSettings
+} = require("./systems/vrBadge");
+
 client.on("interactionCreate", async interaction => {
     // Whitelist buttons and modals
     if ((interaction.isButton() && interaction.customId.startsWith("wl_")) ||
@@ -977,6 +1017,12 @@ client.on("interactionCreate", async interaction => {
     if ((interaction.isButton() && (interaction.customId === "ticket_open_btn" || interaction.customId === "ticket_close_btn" || interaction.customId === "ticket_invite_btn")) ||
         (interaction.isModalSubmit() && (interaction.customId === "ticket_modal_create" || interaction.customId === "ticket_modal_invite"))) {
         return handleSatouTicketInteraction(interaction, config, saveConfig);
+    }
+
+    // VR Badge system interactions
+    if ((interaction.isButton() && interaction.customId.startsWith("vr_")) ||
+        (interaction.isModalSubmit() && interaction.customId.startsWith("vr_"))) {
+        return handleVrInteraction(interaction, config, saveConfig);
     }
 
     if (interaction.isButton()) {
@@ -1037,6 +1083,7 @@ client.on("interactionCreate", async interaction => {
                 .setDescription(`สถานะระบบความปลอดภัยสำหรับเซิร์ฟเวอร์ **${interaction.guild.name}**`)
                 .addFields(
                     { name: "🛡️ ระบบรวม", value: s.enabled ? "🟢 เปิดใช้งาน" : "🔴 ปิด", inline: true },
+                    { name: "🔨 Anti-Everyone Ban", value: s.antiEveryoneBan !== false ? "🟢 เปิดใช้งาน (ยกเว้นหัวดิส)" : "🔴 ปิด", inline: true },
                     { name: "🚨 Anti-Raid", value: s.antiRaid ? "🟢 เปิด" : "🔴 ปิด", inline: true },
                     { name: "💬 Anti-Spam (สมาชิก)", value: s.antiSpam ? "🟢 เปิด" : "🔴 ปิด", inline: true },
                     { name: "🪝 Anti-Webhook Spam", value: s.antiWebhookSpam ? "🟢 เปิดใช้งาน (Active)" : "🔴 ปิด", inline: true },
@@ -1073,6 +1120,23 @@ client.on("interactionCreate", async interaction => {
                     { name: "จำกัดความเร็ว", value: `${s.webhookSpamLimit} ข้อความ / ${s.webhookWindowSeconds} วินาที`, inline: true },
                     { name: "ลบ Webhook อัตโนมัติ", value: s.autoDeleteSpamWebhook ? "🟢 เปิด" : "🔴 ปิด", inline: true },
                     { name: "บล็อกแท็กหมู่", value: s.blockMassMentions ? "🟢 เปิด" : "🔴 ปิด", inline: true }
+                )
+                .setTimestamp();
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (sub === "antieveryone") {
+            const enabled = interaction.options.getBoolean("enabled", true);
+            s.antiEveryoneBan = enabled;
+            saveConfig(config);
+
+            const embed = new EmbedBuilder()
+                .setTitle("✅ บันทึกการตั้งค่า Anti-Everyone สำเร็จ")
+                .setColor(enabled ? 0x57F287 : 0xED4245)
+                .setDescription(
+                    enabled
+                        ? `🟢 เปิดระบบแบนคนแท็ก @everyone สำหรับ **${interaction.guild.name}** แล้ว\n\n🛡️ *ผู้ใดก็ตามที่แท็ก @everyone จะถูกลบข้อความและแบนออกจากเซิร์ฟเวอร์ทันที (ยกเว้นหัวดิสเท่านั้น)*`
+                        : `🔴 ปิดระบบแบนคนแท็ก @everyone เรียบร้อยแล้ว`
                 )
                 .setTimestamp();
             return interaction.reply({ embeds: [embed], ephemeral: true });
@@ -1120,7 +1184,7 @@ client.on("interactionCreate", async interaction => {
                 },
                 {
                     name: "🛡️ Server Management",
-                    value: "`/mod` — จัดการสมาชิก\n`/security` — ระบบ Anti-Raid / Anti-Spam\n`/setup-verify` — ตั้งแผงยืนยันตัวตน\n`/setup-ticket` — ตั้งระบบ Ticket\n`/whitelist` — จัดการ Whitelist / Key"
+                    value: "`/mod` — จัดการสมาชิก\n`/security` — ระบบ Anti-Raid / Anti-Spam\n`/setup-verify` — ตั้งแผงยืนยันตัวตน\n`/setup-ticket` — ตั้งระบบ Ticket\n`/setup-vr` — ตั้งแผงเปิด VR Badge\n`/whitelist` — จัดการ Whitelist / Key"
                 }
             )
             .setFooter({ text: "KrakenVoiceBot" });
@@ -1228,6 +1292,17 @@ client.on("interactionCreate", async interaction => {
             else client.user.setActivity(null);
             return interaction.reply({content:"✅ ล้างสถานะแล้ว",ephemeral:true});
         }
+        if (sub === "vr") {
+            const props = DefaultWebSocketManagerOptions.identifyProperties;
+            return interaction.reply({
+                content: `🥽 **สถานะ VR Gateway ของบอท (Meta Quest):**\n` +
+                         `• **Device:** \`${props.device}\`\n` +
+                         `• **Browser:** \`${props.browser}\`\n` +
+                         `• **OS:** \`${props.os}\`\n` +
+                         `✨ บอทกำลังออนไลน์ด้วยสถานะ VR แว่นเขียวเรียบร้อยแล้ว`,
+                ephemeral: true
+            });
+        }
         const type = interaction.options.getString("type",true);
         const text = interaction.options.getString("text",true);
         const url = interaction.options.getString("url");
@@ -1316,6 +1391,46 @@ client.on("interactionCreate", async interaction => {
         } catch (error) {
             console.log("[SETUP-TICKET ERROR]", error.message);
             return interaction.editReply(`❌ ตั้งค่า Ticket ไม่สำเร็จ: ${error.message}`);
+        }
+    }
+
+    if (interaction.commandName === "setup-vr") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+            return interaction.reply({ content: "❌ ต้องมีสิทธิ์ Manage Server ในการตั้งค่า", ephemeral: true });
+        }
+        const channel = interaction.options.getChannel("channel", true);
+        const role = interaction.options.getRole("role");
+        const logChannel = interaction.options.getChannel("log");
+        const customOAuthUrl = interaction.options.getString("oauth_url");
+        const bannerUrl = interaction.options.getString("image");
+
+        config[interaction.guild.id] ??= {};
+        const vrData = {
+            enabled: true,
+            panelChannelId: channel.id,
+            roleId: role?.id || null,
+            logChannelId: logChannel?.id || null,
+            customOAuthUrl: customOAuthUrl || null,
+            bannerUrl: bannerUrl || null
+        };
+        config[interaction.guild.id].vr = vrData;
+        saveConfig(config);
+        saveVrSettings(interaction.guild.id, vrData, config, saveConfig);
+
+        await interaction.deferReply({ ephemeral: true });
+        try {
+            await sendVrPanel(channel, vrData, client);
+            return interaction.editReply({
+                content: `✅ **ตั้งค่าระบบ VR Badge สำเร็จแล้ว!**\n` +
+                    `📍 **ห้องส่งแผง:** ${channel}\n` +
+                    (role ? `🏷️ **ยศที่จะได้รับ:** ${role}\n` : "") +
+                    (logChannel ? `📜 **ห้องบันทึก Log:** ${logChannel}\n` : "") +
+                    (customOAuthUrl ? `🔗 **Authorize URL:** กำหนดเอง\n` : "") +
+                    `✨ แผง "เปิด VR Badge" พร้อมปุ่มกดถูกส่งไปยัง ${channel} เรียบร้อยแล้วครับ!`
+            });
+        } catch (error) {
+            console.log("[SETUP-VR ERROR]", error.message);
+            return interaction.editReply(`❌ ตั้งค่าไม่สำเร็จ: ${error.message}`);
         }
     }
 

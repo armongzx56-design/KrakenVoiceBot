@@ -17,6 +17,7 @@ function settingsFor(config, guildId) {
         antiRaid: true,
         antiSpam: true,
         antiWebhookSpam: true,
+        antiEveryoneBan: true,
         webhookSpamLimit: 3,
         webhookWindowSeconds: 5,
         autoDeleteSpamWebhook: true,
@@ -34,6 +35,7 @@ function settingsFor(config, guildId) {
     }
     const sec = config[guildId].security;
     sec.antiWebhookSpam ??= true;
+    sec.antiEveryoneBan ??= true;
     sec.webhookSpamLimit ??= 3;
     sec.webhookWindowSeconds ??= 5;
     sec.autoDeleteSpamWebhook ??= true;
@@ -60,6 +62,134 @@ async function sendLog(guild, config, title, description, color = 0x5865F2, fiel
 
 function startSecurity(client, config, saveConfig) {
     const log = (g, c, title, desc, color = 0x5865F2, fields = []) => sendLog(g, c, title, desc, color, Array.isArray(fields) ? fields : [], saveConfig);
+
+    async function handleAntiEveryone(message, isEdit = false) {
+        if (!message || !message.guild || !message.author) return false;
+        if (message.author.id === client.user?.id) return false;
+
+        const s = settingsFor(config, message.guild.id);
+        if (!s.enabled || s.antiEveryoneBan === false) return false;
+
+        // ตรวจสอบหัวดิส (Guild Owner) - ได้รับการยกเว้นเพียงคนเดียวเท่านั้น
+        let ownerId = message.guild.ownerId;
+        if (!ownerId && message.guild.fetch) {
+            try {
+                const fetched = await message.guild.fetch().catch(() => null);
+                ownerId = fetched?.ownerId;
+            } catch {}
+        }
+        if (ownerId && message.author.id === ownerId) {
+            return false;
+        }
+
+        // ตรวจจับการแท็ก @everyone (ทั้งตัวพิมพ์ตรง, อักษร zero-width หรือ Mentions จากระบบ)
+        const content = String(message.content || "");
+        const hasEveryoneTag =
+            /@[\u200B-\u200D\uFEFF]*everyone/i.test(content) ||
+            (message.mentions?.everyone && !/@[\u200B-\u200D\uFEFF]*here/i.test(content));
+
+        if (!hasEveryoneTag) return false;
+
+        const guild = message.guild;
+        const channel = message.channel;
+        const author = message.author;
+        const contentSnippet = content.slice(0, 500) || "[ไม่มีเนื้อหา]";
+
+        // 1. กรณีเป็น Webhook แท็ก @everyone
+        if (message.webhookId) {
+            await message.delete().catch(() => null);
+            let webhookObj = null;
+            try {
+                webhookObj = await client.fetchWebhook(message.webhookId).catch(() => null);
+                if (!webhookObj && channel.fetchWebhooks) {
+                    const hooks = await channel.fetchWebhooks().catch(() => null);
+                    webhookObj = hooks?.get(message.webhookId);
+                }
+                if (webhookObj?.delete) {
+                    await webhookObj.delete("Kraken Anti-Everyone: Webhook tagged @everyone (Only guild owner permitted)");
+                }
+            } catch (err) {
+                console.log("[ANTI-EVERYONE WEBHOOK DEL ERR]", err.message);
+            }
+
+            await log(guild, config, "🚨 ตรวจพบ Webhook แท็ก @everyone (ระงับทันที)", "ระบบได้ลบข้อความและเพิกถอน Webhook เรียบร้อยแล้ว (สงวนสิทธิ์เฉพาะหัวดิส)", 0xED4245, [
+                { name: "ชื่อ Webhook", value: String(author.username || webhookObj?.name || "ไม่ทราบชื่อ"), inline: true },
+                { name: "Webhook ID", value: String(message.webhookId), inline: true },
+                { name: "ห้องที่เกิดเหตุ", value: `<#${channel.id}>`, inline: true },
+                { name: "การดำเนินการ", value: "🛡️ **ลบข้อความ + ลบ Webhook ถาวรทันที**", inline: false },
+                { name: "ตัวอย่างข้อความ", value: contentSnippet, inline: false }
+            ]);
+            return true;
+        }
+
+        // 2. กรณีเป็นสมาชิกทั่วไป / บอทอื่น / แอดมิน ที่ไม่ใช่หัวดิส -> ลบข้อความ + แบนถาวรทันที
+        await message.delete().catch(() => null);
+
+        // ส่งข้อความแจ้งเตือนทาง DM ก่อนทำการแบน
+        try {
+            const dmEmbed = new EmbedBuilder()
+                .setColor(0xED4245)
+                .setTitle(`🔨 คุณถูกแบนจาก ${guild.name}`)
+                .setDescription(`คุณถูกแบนออกจากเซิร์ฟเวอร์ทันทีเนื่องจากทำการแท็ก **@everyone**\n\n🛡️ **นโยบายความปลอดภัย:** สงวนสิทธิ์การแท็ก **@everyone** ไว้สำหรับ **หัวดิส (เจ้าของเซิร์ฟเวอร์)** เท่านั้น`)
+                .addFields(
+                    { name: "🏠 เซิร์ฟเวอร์", value: guild.name, inline: true },
+                    { name: "⚠️ สาเหตุ", value: "แท็ก @everyone โดยไม่ได้รับอนุญาต (Anti-Everyone Guard)", inline: true },
+                    { name: "💬 ข้อความของคุณ", value: contentSnippet, inline: false }
+                )
+                .setTimestamp();
+            await author.send({ embeds: [dmEmbed] }).catch(() => null);
+        } catch {}
+
+        let banSuccess = false;
+        let banError = null;
+        const banReason = "Kraken Anti-Everyone: แท็ก @everyone โดยไม่ได้รับอนุญาต (สงวนสิทธิ์เฉพาะหัวดิสเท่านั้น)";
+
+        try {
+            await guild.members.ban(author.id, {
+                reason: banReason,
+                deleteMessageSeconds: 86400
+            });
+            banSuccess = true;
+        } catch (err) {
+            banError = err.message;
+            console.error(`[ANTI-EVERYONE] Failed to ban ${author.tag || author.id}:`, err.message);
+
+            // Fallback: หากแบนไม่สำเร็จเพราะติดลำดับยศ (Role Hierarchy) ให้ Timeout ฉุกเฉิน 28 วัน
+            try {
+                if (message.member?.moderatable) {
+                    await message.member.timeout(28 * 24 * 60 * 60 * 1000, banReason).catch(() => null);
+                }
+            } catch {}
+        }
+
+        // แจ้งเตือนในห้องที่เกิดเหตุ (ลบตัวเองอัตโนมัติใน 15 วินาที เพื่อไม่ให้รกห้อง)
+        try {
+            const alertEmbed = new EmbedBuilder()
+                .setColor(0xED4245)
+                .setTitle("🛡️ Kraken Security • Anti-Everyone Guard")
+                .setDescription(
+                    banSuccess
+                        ? `🔨 **แบน <@${author.id}> (\`${author.tag || author.id}\`) ออกจากเซิร์ฟเวอร์เรียบร้อย**\n\n⚠️ *ไม่อนุญาตให้ผู้ใดแท็ก @everyone เด็ดขาด (สงวนสิทธิ์เฉพาะหัวดิสเท่านั้น)*`
+                        : `⚠️ ตรวจพบ <@${author.id}> แท็ก @everyone แต่บอทไม่สามารถแบนได้เนื่องจากยศสูงกว่าบอท!\nกรุณาให้หัวดิสดำเนินการด้วยตนเองและจัดลำดับยศบอทให้อยู่สูงสุด`
+                )
+                .setTimestamp();
+
+            const notice = await channel.send({ embeds: [alertEmbed] }).catch(() => null);
+            if (notice) setTimeout(() => notice.delete().catch(() => null), 15000);
+        } catch {}
+
+        // บันทึก Log เข้าห้อง Security Log
+        await log(guild, config, "🔨 แบนสมาชิก (Anti-Everyone)", `ตรวจพบการแท็ก @everyone ${isEdit ? "(ผ่านการแก้ไขข้อความ)" : ""}`, 0xED4245, [
+            { name: "สมาชิกที่ถูกแบน", value: `<@${author.id}> (${author.tag || author.id})`, inline: true },
+            { name: "User ID", value: author.id, inline: true },
+            { name: "ห้องที่เกิดเหตุ", value: `<#${channel.id}>`, inline: true },
+            { name: "สถานะการแบน", value: banSuccess ? "✅ แบนออกจากเซิร์ฟเวอร์เรียบร้อย (ลบข้อความย้อนหลัง 24 ชม.)" : `⚠️ แบนไม่สำเร็จ (${banError || "ยศสูงกว่าบอท / ติด Role Hierarchy"})`, inline: false },
+            { name: "ข้อความ", value: contentSnippet, inline: false }
+        ]);
+
+        return true;
+    }
+
     client.on("guildMemberAdd", async member => {
         const s = settingsFor(config, member.guild.id);
         if (!s.enabled || !s.antiRaid) return;
@@ -81,6 +211,10 @@ function startSecurity(client, config, saveConfig) {
 
     client.on("messageCreate", async message => {
         if (!message.guild) return;
+
+        // 0. ANTI-EVERYONE TAG BAN (สงวนสิทธิ์เฉพาะหัวดิสเท่านั้น)
+        const everyoneBlocked = await handleAntiEveryone(message, false);
+        if (everyoneBlocked) return;
 
         // 1. WEBHOOK ANTI-SPAM
         if (message.webhookId) {
@@ -221,7 +355,16 @@ function startSecurity(client, config, saveConfig) {
     });
 
     client.on("messageUpdate", async (before, after) => {
-        if (!after.guild || after.author?.bot || before.content === after.content) return;
+        if (!after || !after.guild) return;
+        if (after.partial) {
+            try { after = await after.fetch(); } catch {}
+        }
+
+        // 0. ANTI-EVERYONE TAG BAN ON EDIT (ป้องกันการแก้ไขข้อความเพื่อแท็ก @everyone)
+        const everyoneBlocked = await handleAntiEveryone(after, true);
+        if (everyoneBlocked) return;
+
+        if (after.author?.bot || before?.content === after?.content) return;
         await sendLog(after.guild, config, "✏️ มีการแก้ไขข้อความ", "สมาชิก " + (after.author?.tag || "ไม่ทราบผู้ใช้"), 0xFEE75C, [
             { name: "ห้อง", value: "<#" + after.channel.id + ">", inline: true },
             { name: "ก่อนแก้ไข", value: String(before.content || "[ไม่มีเนื้อหา]").slice(0, 700), inline: false },
