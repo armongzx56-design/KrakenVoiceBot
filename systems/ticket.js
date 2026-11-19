@@ -20,7 +20,8 @@ const DEFAULT_TICKET_SETTINGS = {
         panelChannelId: "1566085837270159371", // #🎫・ticket
         categoryId: "1566085930807332944",     // 📂 Tickets Category
         staffRoleId: "1554242619259748463",    // Staff
-        bannerUrl: "https://i.imgur.com/hmmLOly.jpeg"
+        bannerUrl: "https://i.imgur.com/hmmLOly.jpeg",
+        ticketCounter: 551
     }
 };
 
@@ -35,12 +36,38 @@ function ensureTicketSettingsFile() {
     }
 }
 
+function safeWriteTicketSettings(data) {
+    try {
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        const tmp = SETTINGS_FILE + ".tmp";
+        fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+        fs.renameSync(tmp, SETTINGS_FILE);
+    } catch (e) {
+        try {
+            fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2), "utf8");
+        } catch (err) {
+            console.error("[TICKET SETTINGS SAVE ERR]", err.message);
+        }
+    }
+}
+
 function loadTicketSettings() {
     ensureTicketSettingsFile();
     try {
         const raw = fs.readFileSync(SETTINGS_FILE, "utf8");
         const parsed = JSON.parse(raw);
-        return { ...DEFAULT_TICKET_SETTINGS, ...parsed };
+        const result = { ...DEFAULT_TICKET_SETTINGS };
+        for (const [gid, val] of Object.entries(parsed || {})) {
+            result[gid] = {
+                ...(DEFAULT_TICKET_SETTINGS[gid] || {}),
+                ...val
+            };
+            const defCounter = Number(DEFAULT_TICKET_SETTINGS[gid]?.ticketCounter || 0);
+            if (defCounter && Number(result[gid].ticketCounter || 0) < defCounter) {
+                result[gid].ticketCounter = defCounter;
+            }
+        }
+        return result;
     } catch {
         return { ...DEFAULT_TICKET_SETTINGS };
     }
@@ -50,12 +77,19 @@ function saveTicketSettings(guildId, settings, config = null, saveConfig = null)
     ensureTicketSettingsFile();
     try {
         const current = loadTicketSettings();
+        const existingCounter = Number(current[guildId]?.ticketCounter || 0);
+        let targetCounter = settings.ticketCounter !== undefined ? Number(settings.ticketCounter) : existingCounter;
+        if (targetCounter < existingCounter) {
+            targetCounter = existingCounter;
+        }
+
         current[guildId] = {
             ...(DEFAULT_TICKET_SETTINGS[guildId] || {}),
             ...(current[guildId] || {}),
-            ...settings
+            ...settings,
+            ticketCounter: targetCounter
         };
-        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(current, null, 2), "utf8");
+        safeWriteTicketSettings(current);
     } catch (e) {
         console.error("[TICKET SETTINGS SAVE ERR]", e.message);
     }
@@ -78,10 +112,18 @@ function getTicketConfig(config, guildId) {
     const fromConfig = config?.[guildId]?.ticket || {};
     const fallback = DEFAULT_TICKET_SETTINGS[guildId] || {};
 
+    const maxCounter = Math.max(
+        Number(fromFile.ticketCounter || 0),
+        Number(fromConfig.ticketCounter || 0),
+        Number(fallback.ticketCounter || 0),
+        551
+    );
+
     const merged = {
         ...fallback,
         ...fromConfig,
-        ...fromFile
+        ...fromFile,
+        ticketCounter: maxCounter
     };
 
     if (config && guildId) {

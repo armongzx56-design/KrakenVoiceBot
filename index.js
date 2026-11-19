@@ -73,6 +73,7 @@ const STATUS_FILE = path.join(DATA_DIR, "status_settings.json");
 const YOUTUBE_FILE = path.join(DATA_DIR, "youtube_settings.json");
 const ROBLOX_FILE = path.join(DATA_DIR, "roblox_settings.json");
 const SECURITY_FILE = path.join(DATA_DIR, "security_settings.json");
+const TICKET_FILE = path.join(DATA_DIR, "ticket_settings.json");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -105,6 +106,7 @@ function loadConfig() {
     const youtubes = safeReadJSON(YOUTUBE_FILE, {});
     const robloxes = safeReadJSON(ROBLOX_FILE, {});
     const securities = safeReadJSON(SECURITY_FILE, {});
+    const tickets = safeReadJSON(TICKET_FILE, {});
 
     const allGuildIds = new Set([
         ...Object.keys(main),
@@ -113,7 +115,8 @@ function loadConfig() {
         ...Object.keys(statuses),
         ...Object.keys(youtubes),
         ...Object.keys(robloxes),
-        ...Object.keys(securities)
+        ...Object.keys(securities),
+        ...Object.keys(tickets)
     ]);
 
     for (const gid of allGuildIds) {
@@ -124,6 +127,7 @@ function loadConfig() {
         if (youtubes[gid]) main[gid].youtube = { ...(main[gid].youtube || {}), ...youtubes[gid] };
         if (robloxes[gid]) main[gid].roblox = { ...(main[gid].roblox || {}), ...robloxes[gid] };
         if (securities[gid]) main[gid].security = { ...(main[gid].security || {}), ...securities[gid] };
+        if (tickets[gid]) main[gid].ticket = { ...(main[gid].ticket || {}), ...tickets[gid] };
     }
     return main;
 }
@@ -138,6 +142,7 @@ function saveConfig(c) {
         const youtubes = safeReadJSON(YOUTUBE_FILE, {});
         const robloxes = safeReadJSON(ROBLOX_FILE, {});
         const securities = safeReadJSON(SECURITY_FILE, {});
+        const tickets = safeReadJSON(TICKET_FILE, {});
 
         for (const [gid, gdata] of Object.entries(c)) {
             if (gdata.autopost) autoposts[gid] = gdata.autopost;
@@ -146,6 +151,7 @@ function saveConfig(c) {
             if (gdata.youtube) youtubes[gid] = gdata.youtube;
             if (gdata.roblox) robloxes[gid] = gdata.roblox;
             if (gdata.security) securities[gid] = gdata.security;
+            if (gdata.ticket) tickets[gid] = { ...(tickets[gid] || {}), ...gdata.ticket };
         }
 
         safeWriteJSON(AUTOPOST_FILE, autoposts);
@@ -154,6 +160,7 @@ function saveConfig(c) {
         safeWriteJSON(YOUTUBE_FILE, youtubes);
         safeWriteJSON(ROBLOX_FILE, robloxes);
         safeWriteJSON(SECURITY_FILE, securities);
+        safeWriteJSON(TICKET_FILE, tickets);
     } catch (e) {
         console.error("[SYNC DEDICATED FILES ERR]", e.message);
     }
@@ -834,6 +841,24 @@ client.once("clientReady", async () => {
     startSecurity(client, config, saveConfig);
     startVerify(client, config, saveConfig);
     startVrBadge(client, config, saveConfig);
+
+    // Auto-sync ticket counter across all guilds on bot startup
+    (async () => {
+        try {
+            for (const guild of client.guilds.cache.values()) {
+                await guild.channels.fetch().catch(() => null);
+                const tc = getTicketConfig(config, guild.id);
+                const highest = getHighestTicketNumber(guild, tc.ticketCounter);
+                if (highest > Number(tc.ticketCounter || 0)) {
+                    tc.ticketCounter = highest;
+                    saveTicketSettings(guild.id, { ticketCounter: highest }, config, saveConfig);
+                    console.log(`[TICKET READY SYNC] Guild ${guild.id} synced ticket counter to #${highest}`);
+                }
+            }
+        } catch (err) {
+            console.error("[TICKET READY SYNC ERR]", err.message);
+        }
+    })();
 });
 
 const TICKET_TYPES = {
