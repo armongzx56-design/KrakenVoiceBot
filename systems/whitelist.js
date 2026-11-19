@@ -19,6 +19,7 @@ const SETTINGS_FILE = path.join(DATA_DIR, "whitelist_settings.json");
 
 const DEFAULT_LOADERS_VERIFY_URL = "https://loaders-three.vercel.app/api/v1/verify";
 const DEFAULT_PLACE_ID = "131481383443764";
+const GIST_LOADER_URL = "https://gist.githubusercontent.com/MacHub09/76ea573e3e472a8854d4f2dea5944d01/raw/c2175ee3808e846c9baa6c96c5e2a19a2b7e194b/Loaders";
 
 /**
  * ส่งคำขอตรวจสอบคีย์ไปยัง Loaders-Three (ScriptKey API)
@@ -405,9 +406,20 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
         // กรณีคีย์ถูกใช้งานไปแล้วใน database
         if (keyInfo.used) {
             if (keyInfo.discordId === interaction.user.id) {
-                return interaction.editReply({
-                    content: `ℹ️ คุณได้ทำการเปิดใช้งานคีย์นี้ไปแล้วครับ!\n🔑 **คีย์ของคุณ**: \`${keyInfo.key}\`\n💡 สามารถกดปุ่ม **Get Script** เพื่อรับโค้ดสคริปต์ หรือกด **Get VIP Role** เพื่อรับยศได้เลยครับ`
-                });
+                const clientKey = String(keyInfo.key || inputKey).trim();
+                const loaderSnippet = `getfenv().key = "${clientKey}"\nloadstring(game:HttpGet("${GIST_LOADER_URL}"))()`;
+                const alreadyEmbed = new EmbedBuilder()
+                    .setColor(0x5865F2)
+                    .setTitle("ℹ️ คุณได้ทำการเปิดใช้งานคีย์นี้ไปแล้วครับ!")
+                    .setDescription(
+                        `🔑 **คีย์ของคุณ:** \`${clientKey}\`\n\n` +
+                        `📥 **โค้ดสคริปต์ Loader (พร้อมคีย์) สำหรับนำไปรันในเกม:**\n` +
+                        `\`\`\`lua\n${loaderSnippet}\n\`\`\`\n` +
+                        `💡 คัดลอกโค้ดด้านบนไป Execute ในเกมได้ทันทีครับ`
+                    )
+                    .setFooter({ text: "KrakenHub Whitelist System" });
+
+                return interaction.editReply({ embeds: [alreadyEmbed] });
             } else if (keyInfo.createdBy === interaction.user.id) {
                 // ผู้สร้างคีย์ (แอดมิน) นำคีย์มาเคลมเป็นของตนเอง
                 keyInfo.discordId = interaction.user.id;
@@ -508,17 +520,22 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
 
         sendWhitelistLog(interaction.client, interaction.guild, settings, logEmbed).catch(() => { });
 
+        const clientKey = String(keyInfo.key || inputKey).trim();
+        const loaderSnippet = `getfenv().key = "${clientKey}"\nloadstring(game:HttpGet("${GIST_LOADER_URL}"))()`;
+
         const successEmbed = new EmbedBuilder()
             .setColor(0x57F287)
             .setTitle("✅ รีดึมคีย์สำเร็จแล้ว!")
             .setDescription(
                 `ยินดีต้อนรับสู่ **KrakenHub Script** 👋\n\n` +
-                `🔑 **คีย์ของคุณ:** \`${keyInfo.key}\`\n` +
+                `🔑 **คีย์ของคุณ:** \`${clientKey}\`\n` +
                 `🌐 **ระบบยืนยัน:** \`${platformBadge}\`\n` +
-                `⏳ **วันหมดอายุ:** <t:${Math.floor(expiresAt / 1000)}:F> (<t:${Math.floor(expiresAt / 1000)}:R>)\n` +
-                `💡 กดปุ่ม **Get Script** ด้านล่างเพื่อรับโค้ด Loader นำไปรันในเกมได้ทันที${roleMsg}`
+                `⏳ **วันหมดอายุ:** <t:${Math.floor(expiresAt / 1000)}:F> (<t:${Math.floor(expiresAt / 1000)}:R>)${roleMsg}\n\n` +
+                `📥 **โค้ดสคริปต์ Loader (พร้อมคีย์) สำหรับนำไปรันในเกม:**\n` +
+                `\`\`\`lua\n${loaderSnippet}\n\`\`\`\n` +
+                `📌 **คำแนะนำ:** คัดลอกโค้ดด้านบนไป Execute ใน Executor ได้ทันที ระบบจะตรวจสอบคีย์และผูก HWID เครื่องให้อัตโนมัติครับ`
             )
-            .setFooter({ text: "KrakenHub Whitelist System" })
+            .setFooter({ text: "KrakenHub Whitelist System • Ready to execute" })
             .setTimestamp();
 
         return interaction.editReply({ embeds: [successEmbed] });
@@ -543,9 +560,7 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
         }
 
         const userKey = String(user.key || "").trim();
-        const gistLoaderUrl = "https://gist.githubusercontent.com/MacHub09/76ea573e3e472a8854d4f2dea5944d01/raw/c2175ee3808e846c9baa6c96c5e2a19a2b7e194b/Loaders";
-
-        const executeExample = `getfenv().key = "${userKey}"\nloadstring(game:HttpGet("${gistLoaderUrl}"))()`;
+        const executeExample = `getfenv().key = "${userKey}"\nloadstring(game:HttpGet("${GIST_LOADER_URL}"))()`;
 
         const scriptEmbed = new EmbedBuilder()
             .setColor(0x5865F2)
