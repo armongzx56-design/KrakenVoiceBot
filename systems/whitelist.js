@@ -545,7 +545,7 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
         const userKey = String(user.key || "").trim();
         const gistLoaderUrl = "https://gist.githubusercontent.com/MacHub09/76ea573e3e472a8854d4f2dea5944d01/raw/c2175ee3808e846c9baa6c96c5e2a19a2b7e194b/Loaders";
 
-        const executeExample = `getfenv().key = "${userKey}"\ngetgenv().key = "${userKey}"\nscript_key = "${userKey}"\n_G.KrakenKey = "${userKey}"\n\nloadstring(game:HttpGet("${gistLoaderUrl}"))()`;
+        const executeExample = `getfenv().key = "${userKey}"\nloadstring(game:HttpGet("${gistLoaderUrl}"))()`;
 
         const scriptEmbed = new EmbedBuilder()
             .setColor(0x5865F2)
