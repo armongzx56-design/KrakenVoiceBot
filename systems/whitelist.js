@@ -17,6 +17,60 @@ const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const HWID_LOGS_FILE = path.join(DATA_DIR, "hwid_resets.json");
 const SETTINGS_FILE = path.join(DATA_DIR, "whitelist_settings.json");
 
+const DEFAULT_LOADERS_VERIFY_URL = "https://loaders-three.vercel.app/api/v1/verify";
+const DEFAULT_PLACE_ID = "131481383443764";
+
+/**
+ * ส่งคำขอตรวจสอบคีย์ไปยัง Loaders-Three (ScriptKey API)
+ * https://loaders-three.vercel.app/api/v1/verify
+ */
+async function verifyWithLoadersThree(key, hwid = null, placeId = DEFAULT_PLACE_ID, endpoint = DEFAULT_LOADERS_VERIFY_URL) {
+    if (!key || typeof key !== "string" || !key.trim()) {
+        return { ok: false, status: 400, data: { success: false, code: "MISSING_KEY", message: "key is required." } };
+    }
+    const targetUrl = endpoint || DEFAULT_LOADERS_VERIFY_URL;
+    const resolvedPlaceId = String(placeId || DEFAULT_PLACE_ID).trim();
+    const cleanKey = String(key).trim();
+
+    try {
+        const payload = {
+            place_id: resolvedPlaceId,
+            key: cleanKey
+        };
+        if (hwid && String(hwid).trim() !== "") {
+            payload.hwid = String(hwid).trim();
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+
+        const res = await fetch(targetUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "User-Agent": "KrakenVoiceBot-Whitelist-Bridge/1.0"
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+        });
+        clearTimeout(timeout);
+
+        const data = await res.json().catch(() => null);
+        return {
+            ok: res.ok,
+            status: res.status,
+            data: data || { success: false, message: "Invalid JSON response from Loaders-Three" }
+        };
+    } catch (err) {
+        return {
+            ok: false,
+            status: 0,
+            error: err.message,
+            data: { success: false, code: "CONN_ERR", message: `ไม่สามารถเชื่อมต่อไปยัง Loaders-Three ได้: ${err.message}` }
+        };
+    }
+}
+
 function ensureFile(f, def = "{}") {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     if (!fs.existsSync(f)) fs.writeFileSync(f, def, "utf8");
@@ -78,6 +132,8 @@ function getSettings(config, guildId) {
         panelChannelId: fromFile.panelChannelId || existing.panelChannelId || null,
         resetHwidCooldownHours: fromFile.resetHwidCooldownHours || existing.resetHwidCooldownHours || 24,
         allowUserHwidReset: true,
+        loadersVerifyUrl: fromFile.loadersVerifyUrl || existing.loadersVerifyUrl || DEFAULT_LOADERS_VERIFY_URL,
+        defaultPlaceId: fromFile.defaultPlaceId || existing.defaultPlaceId || DEFAULT_PLACE_ID,
         ...existing,
         ...fromFile
     };
@@ -280,34 +336,73 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
         const users = loadJSON(USERS_FILE, {});
         const keys = loadJSON(KEYS_FILE, []);
 
-        // ตรวจสอบคีย์ใน database
-        let foundKeyIndex = keys.findIndex(k => k.key === inputKey || k.key.toUpperCase() === inputKey.toUpperCase());
-        let keyInfo = foundKeyIndex !== -1 ? keys[foundKeyIndex] : null;
+        // ตรวจสอบว่าคีย์นี้มี Discord user อื่นเคลมไปแล้วหรือไม่
+        const existingClaimPair = Object.entries(users).find(([uid, u]) => u.key && u.key.toUpperCase() === inputKey.toUpperCase());
+        if (existingClaimPair && existingClaimPair[0] !== interaction.user.id) {
+            const failReason = `⚠️ คีย์นี้ถูกเปิดใช้งานบน Discord แล้วโดย <@${existingClaimPair[0]}>`;
+            await sendFailedRedeemLog(interaction.client, interaction.guild, settings, interaction.user, inputKey, failReason);
+            return interaction.editReply({
+                content: `❌ คีย์นี้ถูกเปิดใช้งานไปแล้วโดยผู้ใช้อื่น (<@${existingClaimPair[0]}>)! หากต้องการความช่วยเหลือกรุณาเปิด Ticket ติดต่อทีมงาน`
+            });
+        }
 
-        // ถ้าไม่มีในระบบ และไม่ตรงกับรูปแบบคีย์
+        // ตรวจสอบคีย์ใน database ท้องถิ่น
+        let foundKeyIndex = keys.findIndex(k => k.key && (k.key === inputKey || k.key.toUpperCase() === inputKey.toUpperCase()));
+        let keyInfo = foundKeyIndex !== -1 ? keys[foundKeyIndex] : null;
+        let isLoadersKey = false;
+        let loadersData = null;
+
+        const loadersEndpoint = settings.loadersVerifyUrl || DEFAULT_LOADERS_VERIFY_URL;
+        const placeId = settings.defaultPlaceId || DEFAULT_PLACE_ID;
+
+        // ถ้าไม่มีในระบบท้องถิ่น ให้ตรวจสอบกับ Loaders-Three (ScriptKey API)
         if (!keyInfo) {
-            // เช็คว่ามีคีย์รูปแบบ Platoboost / Luarmor / KRAKEN หรือไม่
-            const isCustomValid = inputKey.length >= 8 && (inputKey.startsWith("KRAKEN-") || inputKey.includes("-"));
-            if (isCustomValid) {
+            const loadersRes = await verifyWithLoadersThree(inputKey, null, placeId, loadersEndpoint);
+            loadersData = loadersRes.data;
+
+            if (loadersData && (loadersData.success === true || loadersData.code === "HWID_MISMATCH")) {
+                isLoadersKey = true;
+                const durationDays = Number(loadersData.durationDays || loadersData.days) || 30;
                 keyInfo = {
                     key: inputKey,
-                    durationDays: 30,
+                    durationDays: durationDays,
                     createdAt: Date.now(),
-                    used: false
+                    used: false,
+                    source: "loaders-three",
+                    placeId: placeId,
+                    hwid: loadersData.hwid || null
                 };
+            } else if (loadersData && loadersData.code === "KEY_EXPIRED") {
+                const failReason = "⏳ คีย์นี้หมดอายุการใช้งานแล้วในระบบ ScriptKey (Loaders-Three)";
+                await sendFailedRedeemLog(interaction.client, interaction.guild, settings, interaction.user, inputKey, failReason);
+                return interaction.editReply({
+                    content: `❌ **คีย์หมดอายุแล้ว**\n• ระบบ: \`Loaders-Three (loaders-three.vercel.app)\`\n• ข้อความ: ${loadersData.message || "Key expired"}`
+                });
+            } else if (loadersData && loadersData.code === "KEY_NOT_FOUND") {
+                // เช็คกรณีคีย์ Custom Format (เช่น KRAKEN-XXXX หรือ Platoboost)
+                const isCustomValid = inputKey.length >= 8 && (inputKey.startsWith("KRAKEN-") || inputKey.includes("-"));
+                if (isCustomValid) {
+                    keyInfo = {
+                        key: inputKey,
+                        durationDays: 30,
+                        createdAt: Date.now(),
+                        used: false,
+                        source: "krakenhub-custom"
+                    };
+                }
             }
         }
 
         // กรณีไม่พบคีย์ในระบบเลย
         if (!keyInfo) {
-            const failReason = "❌ ไม่พบคีย์นี้ในระบบ หรือรูปแบบคีย์ไม่ถูกต้อง";
+            const failReason = loadersData?.message || "❌ ไม่พบคีย์นี้ในระบบ ScriptKey (Loaders-Three) หรือ KrakenHub";
             await sendFailedRedeemLog(interaction.client, interaction.guild, settings, interaction.user, inputKey, failReason);
             return interaction.editReply({
-                content: failReason + "\n💡 กรุณาตรวจสอบรหัสคีย์ที่ได้รับจากทางร้าน หรือติดต่อแอดมินเพื่อขอความช่วยเหลือ"
+                content: `❌ **ไม่พบคีย์นี้ในระบบ**\n• ข้อมูล: \`${failReason}\`\n• API: \`${loadersEndpoint}\`\n💡 กรุณาตรวจสอบรหัสคีย์ที่ได้รับจากทางร้าน หรือติดต่อแอดมินเพื่อขอความช่วยเหลือ`
             });
         }
 
-        // กรณีคีย์ถูกใช้งานไปแล้ว
+        // กรณีคีย์ถูกใช้งานไปแล้วใน database
         if (keyInfo.used) {
             if (keyInfo.discordId === interaction.user.id) {
                 return interaction.editReply({
@@ -337,15 +432,18 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
         const now = Date.now();
         const durationMs = (Number(keyInfo.durationDays) || 30) * 86400 * 1000;
         const expiresAt = now + durationMs;
+        const sourcePlatform = isLoadersKey || keyInfo.source === "loaders-three" ? "loaders-three" : (keyInfo.source || "krakenhub");
 
         users[interaction.user.id] = {
             discordId: interaction.user.id,
             discordTag: interaction.user.tag,
             key: keyInfo.key,
-            hwid: users[interaction.user.id]?.hwid || null,
+            hwid: keyInfo.hwid || users[interaction.user.id]?.hwid || null,
             redeemedAt: now,
             expiresAt: expiresAt,
             lastResetHwidAt: users[interaction.user.id]?.lastResetHwidAt || 0,
+            source: sourcePlatform,
+            placeId: keyInfo.placeId || settings.defaultPlaceId || DEFAULT_PLACE_ID,
             active: true
         };
 
@@ -353,10 +451,12 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
             keys[foundKeyIndex].used = true;
             keys[foundKeyIndex].discordId = interaction.user.id;
             keys[foundKeyIndex].redeemedAt = now;
+            keys[foundKeyIndex].source = sourcePlatform;
         } else {
             keyInfo.used = true;
             keyInfo.discordId = interaction.user.id;
             keyInfo.redeemedAt = now;
+            keyInfo.source = sourcePlatform;
             keys.push(keyInfo);
         }
         saveJSON(KEYS_FILE, keys);
@@ -387,6 +487,7 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
         }
 
         // ส่ง Log การใช้คีย์สำเร็จ
+        const platformBadge = sourcePlatform === "loaders-three" ? "🌐 Loaders-Three (ScriptKey)" : "🛡️ KrakenHub Whitelist";
         const durationText = (Number(keyInfo.durationDays) || 30) >= 3650 ? "ตลอดชีพ (Lifetime)" : `${Number(keyInfo.durationDays) || 30} วัน`;
         const logEmbed = new EmbedBuilder()
             .setColor(0x57F287)
@@ -396,10 +497,11 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
                 { name: "👤 สมาชิก (User)", value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true },
                 { name: "🆔 Discord ID", value: `\`${interaction.user.id}\``, inline: true },
                 { name: "🔑 คีย์ (Key)", value: `||${keyInfo.key}||`, inline: true },
+                { name: "🌐 แพลตฟอร์ม (Platform)", value: platformBadge, inline: true },
                 { name: "⏳ ระยะเวลา (Duration)", value: durationText, inline: true },
                 { name: "📅 วันหมดอายุ (Expires)", value: `<t:${Math.floor(expiresAt / 1000)}:F>\n(<t:${Math.floor(expiresAt / 1000)}:R>)`, inline: true },
                 { name: "🏷️ ยศที่ได้รับ (Role)", value: roleName, inline: true },
-                { name: "💻 สถานะ HWID", value: "ยังไม่ผูกเครื่อง (จะผูกอัตโนมัติเมื่อรันในเกม)", inline: false }
+                { name: "💻 สถานะ HWID", value: keyInfo.hwid ? `🔒 ผูกแล้ว (\`${keyInfo.hwid}\`)` : "ยังไม่ผูกเครื่อง (จะผูกอัตโนมัติเมื่อรันในเกม)", inline: false }
             )
             .setFooter({ text: "KrakenHub Whitelist Security • Logger", iconURL: interaction.client?.user?.displayAvatarURL?.() })
             .setTimestamp();
@@ -412,6 +514,7 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
             .setDescription(
                 `ยินดีต้อนรับสู่ **KrakenHub Script** 👋\n\n` +
                 `🔑 **คีย์ของคุณ:** \`${keyInfo.key}\`\n` +
+                `🌐 **ระบบยืนยัน:** \`${platformBadge}\`\n` +
                 `⏳ **วันหมดอายุ:** <t:${Math.floor(expiresAt / 1000)}:F> (<t:${Math.floor(expiresAt / 1000)}:R>)\n` +
                 `💡 กดปุ่ม **Get Script** ด้านล่างเพื่อรับโค้ด Loader นำไปรันในเกมได้ทันที${roleMsg}`
             )
@@ -542,6 +645,14 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
         users[interaction.user.id] = user;
         saveJSON(USERS_FILE, users);
 
+        // รีเซ็ต HWID ใน keys.json ด้วยหากมีคีย์นี้อยู่
+        const keys = loadJSON(KEYS_FILE, []);
+        const kIndex = keys.findIndex(k => k.key && k.key.toUpperCase() === String(user.key || "").toUpperCase());
+        if (kIndex !== -1) {
+            keys[kIndex].hwid = null;
+            saveJSON(KEYS_FILE, keys);
+        }
+
         const availableAt = Math.floor((Date.now() + cooldownMs) / 1000);
         const hwidLogEmbed = new EmbedBuilder()
             .setColor(0xFEE75C)
@@ -551,6 +662,7 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
                 { name: "👤 สมาชิก (User)", value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true },
                 { name: "🆔 Discord ID", value: `\`${interaction.user.id}\``, inline: true },
                 { name: "🔑 คีย์ (Key)", value: `||${user.key}||`, inline: true },
+                { name: "🌐 ระบบ", value: user.source === "loaders-three" ? "`Loaders-Three API`" : "`KrakenHub Internal`", inline: true },
                 { name: "⏳ คูลดาวน์ครั้งถัดไป (Next Reset)", value: `<t:${availableAt}:R> (${cooldownHours} ชม.)`, inline: true },
                 { name: "💻 สถานะ HWID", value: "ปลดล็อคเครื่องเดิมแล้ว พร้อมผูกเครื่องใหม่ในเกม", inline: false }
             )
@@ -587,6 +699,7 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
         const isExpired = user.expiresAt && Date.now() > user.expiresAt;
         const statusEmoji = isExpired ? "🔴 หมดอายุ" : "🟢 ใช้งานได้";
         const maskedKey = user.key ? user.key.slice(0, 4) + "****-****-" + user.key.slice(-4) : "ไม่ระบุ";
+        const platformName = user.source === "loaders-three" ? "🌐 Loaders-Three (ScriptKey)" : "🛡️ KrakenHub Whitelist";
 
         const statsEmbed = new EmbedBuilder()
             .setColor(isExpired ? 0xED4245 : 0x5865F2)
@@ -595,7 +708,8 @@ async function handleWhitelistInteraction(interaction, config, saveConfig) {
                 { name: "👤 สมาชิก", value: `<@${interaction.user.id}>`, inline: true },
                 { name: "⚡ สถานะ", value: statusEmoji, inline: true },
                 { name: "🔑 คีย์", value: `\`${maskedKey}\``, inline: true },
-                { name: "💻 สถานะ HWID", value: user.hwid ? "🔒 ผูกเครื่องแล้ว" : "🔓 ยังไม่ผูกเครื่อง (พร้อมผูก)", inline: true },
+                { name: "🌐 ระบบยืนยัน", value: `\`${platformName}\``, inline: true },
+                { name: "💻 สถานะ HWID", value: user.hwid ? `🔒 ผูกแล้ว (\`${user.hwid.slice(0, 16)}...\`)` : "🔓 ยังไม่ผูกเครื่อง (พร้อมผูก)", inline: true },
                 { name: "📅 วันที่รีดึม", value: `<t:${Math.floor(user.redeemedAt / 1000)}:f>`, inline: true },
                 { name: "⏳ วันหมดอายุ", value: user.expiresAt ? `<t:${Math.floor(user.expiresAt / 1000)}:R>` : "ตลอดชีพ", inline: true }
             )
@@ -613,6 +727,9 @@ module.exports = {
     handleWhitelistInteraction,
     sendWhitelistLog,
     sendFailedRedeemLog,
+    verifyWithLoadersThree,
+    DEFAULT_LOADERS_VERIFY_URL,
+    DEFAULT_PLACE_ID,
     loadJSON,
     saveJSON,
     USERS_FILE,

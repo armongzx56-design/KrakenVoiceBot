@@ -258,7 +258,12 @@ const commands = [
         .addSubcommand(s => s.setName("log").setDescription("[ 📜 ] ตั้งค่าห้องสำหรับบันทึก Log การใช้คีย์ / Reset HWID")
             .addChannelOption(o => o.setName("channel").setDescription("เลือกห้องบันทึก Log").addChannelTypes(ChannelType.GuildText).setRequired(true)))
         .addSubcommand(s => s.setName("script").setDescription("[ 💻 ] ตั้งค่าข้อความ Script Loader")
-            .addStringOption(o => o.setName("code").setDescription("โค้ด loadstring หรือลิงก์").setRequired(true))),
+            .addStringOption(o => o.setName("code").setDescription("โค้ด loadstring หรือลิงก์").setRequired(true)))
+        .addSubcommand(s => s.setName("check").setDescription("[ 🔍 ] ตรวจสอบคีย์กับระบบ Loaders-Three / Whitelist")
+            .addStringOption(o => o.setName("key").setDescription("รหัสคีย์ที่ต้องการตรวจสอบ").setRequired(true))
+            .addStringOption(o => o.setName("place_id").setDescription("Place ID เกม (ค่าเริ่มต้น: 131481383443764)").setRequired(false)))
+        .addSubcommand(s => s.setName("endpoint").setDescription("[ 🌐 ] ดูหรือตั้งค่า API Endpoint ของ Loaders-Three")
+            .addStringOption(o => o.setName("url").setDescription("URL ของ Endpoint (เช่น https://loaders-three.vercel.app/api/v1/verify)").setRequired(false))),
     new SlashCommandBuilder()
         .setName("setup-verify")
         .setDescription("[ ✅ ] ตั้งค่าระบบยืนยันตัวตนรับยศ (สไตล์ Satou)")
@@ -976,6 +981,9 @@ const {
     handleWhitelistInteraction,
     sendWhitelistLog,
     sendFailedRedeemLog,
+    verifyWithLoadersThree,
+    DEFAULT_LOADERS_VERIFY_URL,
+    DEFAULT_PLACE_ID,
     loadJSON: loadWhitelistJSON,
     saveJSON: saveWhitelistJSON,
     KEYS_FILE: WHITELIST_KEYS_FILE
@@ -1834,6 +1842,77 @@ client.on("interactionCreate", async interaction => {
                 content: `✅ บันทึก Script Loader ใหม่เรียบร้อยแล้ว (บันทึกถาวร)`,
                 ephemeral: true
             });
+        }
+
+        if (sub === "check") {
+            await interaction.deferReply({ ephemeral: true });
+            const checkKey = interaction.options.getString("key", true).trim();
+            const placeId = interaction.options.getString("place_id") || settings.defaultPlaceId || DEFAULT_PLACE_ID;
+            const endpoint = settings.loadersVerifyUrl || DEFAULT_LOADERS_VERIFY_URL;
+
+            const tStart = Date.now();
+            const loadersRes = await verifyWithLoadersThree(checkKey, null, placeId, endpoint);
+            const latency = Date.now() - tStart;
+            const data = loadersRes.data || {};
+
+            const { USERS_FILE, KEYS_FILE } = require("./systems/whitelist");
+            const localUsers = loadWhitelistJSON(USERS_FILE, {});
+            const localKeys = loadWhitelistJSON(KEYS_FILE, []);
+            const userPair = Object.entries(localUsers).find(([uid, u]) => u.key && u.key.toUpperCase() === checkKey.toUpperCase());
+            const localKeyObj = localKeys.find(k => k.key && k.key.toUpperCase() === checkKey.toUpperCase());
+
+            const isSuccess = data.success === true;
+            const isHwidMismatch = data.code === "HWID_MISMATCH";
+            const isLocalValid = Boolean(localKeyObj || userPair);
+
+            let statusColor = 0xED4245; // Red
+            let statusText = "❌ ไม่ถูกต้อง (Invalid / Not Found)";
+            if (isSuccess) {
+                statusColor = 0x57F287; // Green
+                statusText = "🟢 ใช้งานได้ (Valid & Active on Loaders-Three)";
+            } else if (isHwidMismatch) {
+                statusColor = 0xFEE75C; // Yellow
+                statusText = "🟡 คีย์ถูกต้องแต่ติด HWID (HWID Mismatch on Loaders-Three)";
+            } else if (isLocalValid) {
+                statusColor = 0x5865F2; // Blurple
+                statusText = "🔵 พบคีย์ในระบบ KrakenHub ท้องถิ่น";
+            }
+
+            const checkEmbed = new EmbedBuilder()
+                .setColor(statusColor)
+                .setTitle("🔍 ผลการตรวจสอบคีย์ (Key Verification Diagnostic)")
+                .addFields(
+                    { name: "🔑 คีย์ (Key)", value: `||${checkKey}||`, inline: true },
+                    { name: "📊 สถานะ (Status)", value: statusText, inline: true },
+                    { name: "🌐 API Endpoint", value: `\`${endpoint}\``, inline: false },
+                    { name: "🎮 Place ID", value: `\`${placeId}\``, inline: true },
+                    { name: "⚡ ความเร็วตอบกลับ", value: `${latency} ms`, inline: true },
+                    { name: "👤 ผู้ถือครองใน Discord", value: userPair ? `<@${userPair[0]}> (\`${userPair[1]?.discordTag || userPair[0]}\`)` : "`ยังไม่มีการเคลมใน Discord`", inline: false },
+                    { name: "💻 สถานะ HWID ใน Discord", value: userPair?.[1]?.hwid ? `🔒 ผูกแล้ว (\`${userPair[1].hwid}\`)` : "`ยังไม่ผูกเครื่อง`", inline: true },
+                    { name: "💬 ข้อความจาก API", value: `\`${data.message || data.code || (loadersRes.ok ? "OK" : "No response")}\``, inline: false }
+                )
+                .setFooter({ text: "KrakenHub • Loaders-Three Verification Bridge" })
+                .setTimestamp();
+
+            return interaction.editReply({ embeds: [checkEmbed] });
+        }
+
+        if (sub === "endpoint") {
+            const newUrl = interaction.options.getString("url");
+            if (newUrl) {
+                settings.loadersVerifyUrl = newUrl.trim();
+                saveWhitelistSettings(interaction.guild.id, settings, config, saveConfig);
+                return interaction.reply({
+                    content: `✅ บันทึก Loaders-Three Verify Endpoint เป็น \`${newUrl.trim()}\` เรียบร้อยแล้ว (บันทึกถาวร)`,
+                    ephemeral: true
+                });
+            } else {
+                const current = settings.loadersVerifyUrl || DEFAULT_LOADERS_VERIFY_URL;
+                return interaction.reply({
+                    content: `🌐 **Loaders-Three Verify Endpoint ปัจจุบัน:**\n\`${current}\`\n\n🎮 **Default Place ID:** \`${settings.defaultPlaceId || DEFAULT_PLACE_ID}\``,
+                    ephemeral: true
+                });
+            }
         }
     }
 });

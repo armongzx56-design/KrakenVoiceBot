@@ -53,7 +53,7 @@ function startDashboard({ client, config, saveConfig, formatUptime }) {
     }
 
     // Public API for Roblox In-Game Key & Expiration Verification
-    app.get("/api/whitelist/verify", (req, res) => {
+    app.get("/api/whitelist/verify", async (req, res) => {
         const key = String(req.query.key || "").trim().toUpperCase();
         const hwid = String(req.query.hwid || "").trim();
         if (!key) return res.status(400).json({ valid: false, error: "Missing key" });
@@ -69,6 +69,34 @@ function startDashboard({ client, config, saveConfig, formatUptime }) {
         const matchedUser = matchedUserPair ? matchedUserPair[1] : null;
 
         if (foundKeyIndex === -1 && !matchedUser) {
+            // Check fallback to Loaders-Three API (loaders-three.vercel.app)
+            try {
+                const lRes = await fetch("https://loaders-three.vercel.app/api/v1/verify", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ place_id: "131481383443764", hwid: hwid || undefined, key: key })
+                });
+                const lData = await lRes.json().catch(() => null);
+                if (lData && lData.success === true) {
+                    return res.json({
+                        valid: true,
+                        key: key,
+                        source: "loaders-three",
+                        expiresAt: Math.floor((now + 30 * 86400 * 1000) / 1000),
+                        secondsLeft: 30 * 86400
+                    });
+                } else if (lData && lData.code === "HWID_MISMATCH") {
+                    return res.json({
+                        valid: false,
+                        error: "HWID mismatch. Please reset HWID in Discord bot.",
+                        hwidLocked: true
+                    });
+                } else if (lData && lData.message) {
+                    return res.json({ valid: false, error: lData.message });
+                }
+            } catch (err) {
+                console.error("[LOADERS FALLBACK ERROR]", err.message);
+            }
             return res.json({ valid: false, error: "Key not found" });
         }
 
@@ -202,6 +230,226 @@ function startDashboard({ client, config, saveConfig, formatUptime }) {
             key: key,
             expiresAt: Math.floor(expiresAt / 1000),
             secondsLeft: Math.max(0, Math.floor((expiresAt - now) / 1000))
+        });
+    });
+
+    // ==============================================================
+    // 🔑 LOADERS-THREE & SCRIPTKEY SPECIFICATION BRIDGE
+    // Endpoint: POST /api/v1/verify
+    // Connects KrakenVoiceBot with https://loaders-three.vercel.app/api/v1/verify
+    // ==============================================================
+    app.post("/api/v1/verify", async (req, res) => {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+        const body = req.body || {};
+        const placeId = String(body.place_id || body.placeId || "").trim();
+        const key = String(body.key || "").trim().toUpperCase();
+        const hwid = String(body.hwid || "").trim();
+
+        if (!placeId && !body.loader_token) {
+            return res.status(400).json({ success: false, code: "MISSING_TOKEN", message: "loader_token or place_id is required." });
+        }
+        if (!key) {
+            return res.status(400).json({ success: false, code: "MISSING_KEY", message: "key is required." });
+        }
+
+        const { loadJSON, saveJSON, KEYS_FILE, USERS_FILE, getSettings, sendWhitelistLog } = require("../systems/whitelist");
+        const { EmbedBuilder } = require("discord.js");
+        const keys = loadJSON(KEYS_FILE, []);
+        const users = loadJSON(USERS_FILE, {});
+
+        const foundKeyIndex = keys.findIndex(k => k.key && k.key.toUpperCase() === key);
+        const userEntries = Object.entries(users);
+        const matchedUserPair = userEntries.find(([id, u]) => u.key && u.key.toUpperCase() === key);
+        const matchedUserId = matchedUserPair ? matchedUserPair[0] : null;
+        const matchedUser = matchedUserPair ? matchedUserPair[1] : null;
+        const now = Date.now();
+
+        // 1. ตรวจสอบในระบบฐานข้อมูลท้องถิ่นของบอท
+        if (foundKeyIndex !== -1 || matchedUser) {
+            const foundKey = foundKeyIndex !== -1 ? keys[foundKeyIndex] : null;
+            const durationDays = Number(foundKey?.durationDays) || 30;
+            const expiresAt = matchedUser?.expiresAt || (foundKey?.redeemedAt ? foundKey.redeemedAt + durationDays * 86400 * 1000 : now + durationDays * 86400 * 1000);
+
+            if (now > expiresAt) {
+                return res.status(403).json({
+                    success: false,
+                    code: "KEY_EXPIRED",
+                    message: "คีย์หมดอายุแล้ว กรุณาติดต่อแอดมินหรือซื้อคีย์ใหม่"
+                });
+            }
+
+            // จัดการผูก HWID
+            if (hwid) {
+                if (matchedUser) {
+                    if (!matchedUser.hwid) {
+                        matchedUser.hwid = hwid;
+                        matchedUser.boundAt = now;
+                        saveJSON(USERS_FILE, users);
+
+                        try {
+                            const bindEmbed = new EmbedBuilder()
+                                .setColor(0x57F287)
+                                .setTitle("💻 มีการผูก HWID สำเร็จ (HWID Bound - /api/v1/verify)")
+                                .addFields(
+                                    { name: "👤 สมาชิก (User)", value: `<@${matchedUserId}> (\`${matchedUser.discordTag || matchedUserId}\`)`, inline: true },
+                                    { name: "🆔 Discord ID", value: `\`${matchedUserId}\``, inline: true },
+                                    { name: "🔑 คีย์ (Key)", value: `||${key}||`, inline: true },
+                                    { name: "🖥️ Hardware ID (HWID)", value: `\`${hwid}\``, inline: false },
+                                    { name: "🎮 Place ID", value: `\`${placeId || "131481383443764"}\``, inline: true },
+                                    { name: "📅 วันหมดอายุ (Expires)", value: `<t:${Math.floor(expiresAt / 1000)}:R>`, inline: true }
+                                )
+                                .setFooter({ text: "KrakenHub Whitelist Security • API Bridge", iconURL: client?.user?.displayAvatarURL?.() })
+                                .setTimestamp();
+
+                            if (client?.guilds?.cache) {
+                                for (const guild of client.guilds.cache.values()) {
+                                    const settings = getSettings(config, guild.id);
+                                    sendWhitelistLog(client, guild, settings, bindEmbed).catch(() => {});
+                                }
+                            }
+                        } catch (_) {}
+                    } else if (matchedUser.hwid !== hwid) {
+                        try {
+                            const mismatchEmbed = new EmbedBuilder()
+                                .setColor(0xED4245)
+                                .setTitle("⚠️ ตรวจพบการพยายามใช้คีย์ข้ามเครื่อง (HWID Mismatch - /api/v1/verify)")
+                                .addFields(
+                                    { name: "👤 เจ้าของคีย์ (Owner)", value: `<@${matchedUserId}> (\`${matchedUser.discordTag || matchedUserId}\`)`, inline: true },
+                                    { name: "🆔 Discord ID", value: `\`${matchedUserId}\``, inline: true },
+                                    { name: "🔑 คีย์ (Key)", value: `||${key}||`, inline: true },
+                                    { name: "🔒 HWID ที่ผูกไว้เดิม", value: `\`${matchedUser.hwid}\``, inline: false },
+                                    { name: "🚫 HWID ของเครื่องที่พยายามรัน", value: `\`${hwid}\``, inline: false },
+                                    { name: "💡 วิธีแก้ไข", value: "ให้ผู้ใช้กดปุ่ม **Reset HWID** ในดิสคอร์ดก่อนเปลี่ยนเครื่อง", inline: false }
+                                )
+                                .setFooter({ text: "KrakenHub Whitelist Security • API Bridge", iconURL: client?.user?.displayAvatarURL?.() })
+                                .setTimestamp();
+
+                            if (client?.guilds?.cache) {
+                                for (const guild of client.guilds.cache.values()) {
+                                    const settings = getSettings(config, guild.id);
+                                    sendWhitelistLog(client, guild, settings, mismatchEmbed).catch(() => {});
+                                }
+                            }
+                        } catch (_) {}
+
+                        return res.status(403).json({
+                            success: false,
+                            code: "HWID_MISMATCH",
+                            message: "คีย์ถูกผูกกับเครื่องอื่นแล้ว (ติดต่อแอดมินหรือกด Reset HWID ในดิสคอร์ด)"
+                        });
+                    }
+                } else if (foundKey) {
+                    if (!foundKey.hwid) {
+                        foundKey.hwid = hwid;
+                        foundKey.boundAt = now;
+                        saveJSON(KEYS_FILE, keys);
+                    } else if (foundKey.hwid !== hwid) {
+                        return res.status(403).json({
+                            success: false,
+                            code: "HWID_MISMATCH",
+                            message: "คีย์ถูกผูกกับเครื่องอื่นแล้ว (ติดต่อแอดมินหรือกด Reset HWID ในดิสคอร์ด)"
+                        });
+                    }
+                }
+            }
+
+            return res.json({
+                success: true,
+                code: "OK",
+                message: "ผ่านการตรวจสอบลิขสิทธิ์",
+                key: key,
+                place_id: placeId,
+                expiresAt: Math.floor(expiresAt / 1000)
+            });
+        }
+
+        // 2. ถ้าไม่พบในระบบท้องถิ่น -> ส่งต่อตรวจสอบกับ Loaders-Three API (loaders-three.vercel.app)
+        try {
+            const loadersResp = await fetch("https://loaders-three.vercel.app/api/v1/verify", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "User-Agent": "KrakenVoiceBot-Verification-Bridge/1.0"
+                },
+                body: JSON.stringify({
+                    place_id: placeId,
+                    hwid: hwid || undefined,
+                    key: key
+                })
+            });
+
+            const loadersData = await loadersResp.json().catch(() => null);
+
+            if (loadersData) {
+                // Log การตรวจสอบสำเร็จจาก Loaders-Three เข้าดิสคอร์ด
+                if (loadersData.success === true) {
+                    try {
+                        const verifiedEmbed = new EmbedBuilder()
+                            .setColor(0x57F287)
+                            .setTitle("🛡️ มีการรันสคริปต์สำเร็จผ่าน Loaders-Three (ScriptKey)")
+                            .addFields(
+                                { name: "🔑 คีย์ (Key)", value: `||${key}||`, inline: true },
+                                { name: "🖥️ Hardware ID (HWID)", value: `\`${hwid || "N/A"}\``, inline: true },
+                                { name: "🎮 Place ID", value: `\`${placeId}\``, inline: true },
+                                { name: "🌐 ต้นทาง (Source)", value: "`https://loaders-three.vercel.app/api/v1/verify`", inline: false }
+                            )
+                            .setFooter({ text: "KrakenHub • Loaders-Three Bridge", iconURL: client?.user?.displayAvatarURL?.() })
+                            .setTimestamp();
+
+                        if (client?.guilds?.cache) {
+                            for (const guild of client.guilds.cache.values()) {
+                                const settings = getSettings(config, guild.id);
+                                sendWhitelistLog(client, guild, settings, verifiedEmbed).catch(() => {});
+                            }
+                        }
+                    } catch (_) {}
+                } else if (loadersData.code === "HWID_MISMATCH") {
+                    try {
+                        const hwidMismatchEmbed = new EmbedBuilder()
+                            .setColor(0xED4245)
+                            .setTitle("⚠️ [Loaders-Three] ตรวจพบ HWID Mismatch ในเกม")
+                            .addFields(
+                                { name: "🔑 คีย์ (Key)", value: `||${key}||`, inline: true },
+                                { name: "🖥️ HWID ที่พยายามรัน", value: `\`${hwid || "N/A"}\``, inline: true },
+                                { name: "🎮 Place ID", value: `\`${placeId}\``, inline: true },
+                                { name: "⚠️ ข้อความระบบ", value: loadersData.message || "HWID Mismatch", inline: false }
+                            )
+                            .setFooter({ text: "KrakenHub • Loaders-Three Bridge", iconURL: client?.user?.displayAvatarURL?.() })
+                            .setTimestamp();
+
+                        if (client?.guilds?.cache) {
+                            for (const guild of client.guilds.cache.values()) {
+                                const settings = getSettings(config, guild.id);
+                                sendWhitelistLog(client, guild, settings, hwidMismatchEmbed).catch(() => {});
+                            }
+                        }
+                    } catch (_) {}
+                }
+
+                return res.status(loadersResp.status).json(loadersData);
+            }
+        } catch (fetchErr) {
+            console.error("[LOADERS-THREE BRIDGE ERROR]", fetchErr.message);
+        }
+
+        return res.status(404).json({
+            success: false,
+            code: "KEY_NOT_FOUND",
+            message: "This key does not exist for this script."
+        });
+    });
+
+    // Status / Health Check endpoint for verify bridge
+    app.get("/api/v1/verify", (req, res) => {
+        res.json({
+            service: "KrakenVoiceBot Loaders-Three Verify Bridge",
+            status: "online",
+            targetEndpoint: "https://loaders-three.vercel.app/api/v1/verify",
+            supportedMethods: ["POST"],
+            timestamp: new Date().toISOString()
         });
     });
 

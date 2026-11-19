@@ -1,0 +1,7 @@
+{
+  "1550132569432137903": {
+    "enabled": true,
+    "loadersVerifyUrl": "https://loaders-three.vercel.app/api/v1/verify",
+    "defaultPlaceId": "131481383443764"
+  }
+}
