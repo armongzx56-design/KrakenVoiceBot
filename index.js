@@ -203,7 +203,10 @@ const commands = [
             .addChannelOption(o => o.setName("category").setDescription("หมวดหมู่ Ticket").addChannelTypes(ChannelType.GuildCategory))
             .addRoleOption(o => o.setName("staff").setDescription("ยศทีมงาน"))
             .addChannelOption(o => o.setName("notify").setDescription("ห้องแจ้งเตือนทีมงานเมื่อมี Ticket ใหม่").addChannelTypes(ChannelType.GuildText)))
-        .addSubcommand(s => s.setName("panel").setDescription("[ 📨 ] ส่ง Panel ใหม่")),
+        .addSubcommand(s => s.setName("panel").setDescription("[ 📨 ] ส่ง Panel ใหม่"))
+        .addSubcommand(s => s.setName("set-counter").setDescription("[ 🔢 ] ตั้งค่าเลขตั๋ว Ticket เริ่มต้นใหม่")
+            .addIntegerOption(o => o.setName("number").setDescription("เลขตั๋วที่ต้องการเชื่อมต่อ (เช่น 551)").setRequired(true)))
+        .addSubcommand(s => s.setName("sync").setDescription("[ 🔄 ] สแกนหาเลขตั๋วสูงสุดในเซิร์ฟเวอร์แล้วเชื่อมต่อให้อัตโนมัติ")),
     new SlashCommandBuilder()
         .setName("247").setDescription("[ 🎧 ] ให้บอทอยู่ในห้องเสียง 24/7")
         .addChannelOption(o => o.setName("channel").setDescription("เลือกห้องเสียงที่ให้บอทเข้า").addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice).setRequired(true)),
@@ -999,7 +1002,9 @@ const {
 const {
     sendTicketPanel: sendSatouTicketPanel,
     handleTicketInteraction: handleSatouTicketInteraction,
-    saveTicketSettings
+    saveTicketSettings,
+    getTicketConfig,
+    getHighestTicketNumber
 } = require("./systems/ticket");
 
 const {
@@ -1456,6 +1461,30 @@ client.on("interactionCreate", async interaction => {
                 console.log("[TICKET SETUP ERROR]", error.message);
                 return interaction.editReply("❌ ตั้ง Ticket ไม่สำเร็จ: " + error.message);
             }
+        }
+        if (sub === "panel") {
+            const id=config[interaction.guild.id]?.ticket?.panelChannelId, ch=id ? interaction.guild.channels.cache.get(id) : null;
+            if (!ch) return interaction.reply({content:"❌ ใช้ /ticket setup ก่อน",ephemeral:true}); await sendTicketPanel(ch); return interaction.reply({content:"✅ ส่ง Panel ใหม่แล้ว",ephemeral:true});
+        }
+        if (sub === "set-counter") {
+            const num = interaction.options.getInteger("number", true);
+            saveTicketSettings(interaction.guild.id, { ticketCounter: num }, config, saveConfig);
+            return interaction.reply({
+                content: `✅ ตั้งค่าเลขตั๋วของเซิร์ฟเวอร์เป็น **#${num}** เรียบร้อยแล้ว (ตั๋วใบถัดไปจะเป็น #${num + 1})`,
+                ephemeral: true
+            });
+        }
+        if (sub === "sync") {
+            await interaction.deferReply({ ephemeral: true });
+            try {
+                await interaction.guild.channels.fetch().catch(() => null);
+            } catch (_) {}
+            const tc = getTicketConfig(config, interaction.guild.id);
+            const highest = getHighestTicketNumber(interaction.guild, tc.ticketCounter);
+            saveTicketSettings(interaction.guild.id, { ticketCounter: highest }, config, saveConfig);
+            return interaction.editReply({
+                content: `🔄 ซิงก์เชื่อมต่อเลขตั๋วเรียบร้อยแล้ว!\n• เลขตั๋วสูงสุดที่พบในเซิร์ฟเวอร์: **#${highest}**\n• ตั๋วใบถัดไปจะเปิดเป็น: **#${highest + 1}**`
+            });
         }
         const id=config[interaction.guild.id]?.ticket?.panelChannelId, ch=id ? interaction.guild.channels.cache.get(id) : null;
         if (!ch) return interaction.reply({content:"❌ ใช้ /ticket setup ก่อน",ephemeral:true}); await sendTicketPanel(ch); return interaction.reply({content:"✅ ส่ง Panel ใหม่แล้ว",ephemeral:true});

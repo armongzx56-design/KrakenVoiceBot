@@ -163,6 +163,33 @@ ${body || "<p>ไม่มีข้อความใน Ticket</p>"}
 </html>`, "utf8");
 }
 
+// ค้นหาเลขตั๋วที่สูงที่สุดจากทั้งการตั้งค่าและห้องทั้งหมดที่มีอยู่ในเซิร์ฟเวอร์
+function getHighestTicketNumber(guild, savedCounter = 0) {
+    let max = Math.max(Number(savedCounter || 0), 500);
+    if (!guild || !guild.channels || !guild.channels.cache) return max;
+
+    for (const ch of guild.channels.cache.values()) {
+        if (!ch || !ch.name) continue;
+        const nameMatch = ch.name.match(/tickets?[-_ ]*(\d+)/i);
+        if (nameMatch && nameMatch[1]) {
+            const parsed = parseInt(nameMatch[1], 10);
+            if (!isNaN(parsed) && parsed > max) {
+                max = parsed;
+            }
+        }
+        if (ch.topic) {
+            const topicMatch = ch.topic.match(/kraken-ticket:[^:]+:(\d+)/) || ch.topic.match(/tickets?[-_ ]*(\d+)/i);
+            if (topicMatch && topicMatch[1]) {
+                const parsed = parseInt(topicMatch[1], 10);
+                if (!isNaN(parsed) && parsed > max) {
+                    max = parsed;
+                }
+            }
+        }
+    }
+    return max;
+}
+
 async function handleTicketInteraction(interaction, config, saveConfig) {
     const guild = interaction.guild;
     const guildId = guild.id;
@@ -209,13 +236,14 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
                 });
             }
 
-            // Next counter number (เริ่มขั้นต่ำที่ 500 และบวกเพิ่ม 1 ทุกครั้งที่เปิดห้องใหม่)
-            let currentCounter = Number(tc.ticketCounter || 0);
-            if (currentCounter < 500) {
-                currentCounter = 500;
-            } else {
-                currentCounter += 1;
-            }
+            // ดึงห้องทั้งหมดในเซิร์ฟเวอร์เพื่อให้ cache ล่าสุดสมบูรณ์
+            try {
+                await guild.channels.fetch().catch(() => null);
+            } catch (_) { }
+
+            // หาเลขตั๋วที่สูงที่สุดจากทั้ง settings และห้องที่มีอยู่จริงใน Discord (ไม่ต่ำกว่า 500)
+            const baseCounter = getHighestTicketNumber(guild, tc.ticketCounter);
+            const currentCounter = baseCounter + 1;
             tc.ticketCounter = currentCounter;
             saveTicketSettings(guildId, { ticketCounter: currentCounter }, config, saveConfig);
 
@@ -451,5 +479,6 @@ module.exports = {
     getTicketConfig,
     saveTicketSettings,
     loadTicketSettings,
+    getHighestTicketNumber,
     DEFAULT_TICKET_SETTINGS
 };
