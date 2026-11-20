@@ -16,7 +16,8 @@ const {
     PermissionsBitField,
     WebhookClient,
     DefaultWebSocketManagerOptions,
-    Partials
+    Partials,
+    AttachmentBuilder
 } = require("discord.js");
 
 // Discord VR Status Identification (Meta Quest / VR Headset Badge)
@@ -1285,14 +1286,35 @@ client.on("interactionCreate", async interaction => {
             description += `\n\`\`\`ansi\n${ANSI_YELLOW}🔧 การแก้ไขบั๊ก (Bug Fixes):${ANSI_RESET}\n${formattedFixes}\n\`\`\``;
         }
 
+        const cleanVer = (version.startsWith("v") || version.startsWith("V") ? version : `v${version}`)
+            .replace(/-/g, "--")
+            .replace(/_/g, "__")
+            .replace(/ /g, "_");
+        const badgeUrl = `https://img.shields.io/badge/${encodeURIComponent(cleanVer)}-LIVE-23a55a.png?style=for-the-badge&labelColor=1e1f22`;
+
         const embed = new EmbedBuilder()
             .setColor(0x5865F2)
             .setAuthor({
-                name: `🚀 SCRIPT UPDATE CHANGELOG • ${version.toUpperCase()} LIVE`,
+                name: "🚀 SCRIPT UPDATE CHANGELOG",
                 iconURL: client.user.displayAvatarURL({ dynamic: true })
             })
             .setTitle(`🎮 อัปเดตสคริปต์ ${game}`)
             .setDescription(description);
+
+        const files = [];
+        try {
+            const res = await fetch(badgeUrl, { signal: AbortSignal.timeout(3000) });
+            if (res.ok) {
+                const buffer = Buffer.from(await res.arrayBuffer());
+                const attachment = new AttachmentBuilder(buffer, { name: "version_badge.png" });
+                files.push(attachment);
+                embed.setThumbnail("attachment://version_badge.png");
+            } else {
+                embed.setThumbnail(badgeUrl);
+            }
+        } catch {
+            embed.setThumbnail(badgeUrl);
+        }
 
         if (customImage) {
             embed.setImage(customImage);
@@ -1309,7 +1331,8 @@ client.on("interactionCreate", async interaction => {
         try {
             await targetChannel.send({
                 content: pingContent,
-                embeds: [embed]
+                embeds: [embed],
+                files: files.length ? files : undefined
             });
 
             return interaction.reply({
