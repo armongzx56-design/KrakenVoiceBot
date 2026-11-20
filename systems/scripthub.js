@@ -213,71 +213,35 @@ async function handleScriptHubInteraction(interaction) {
 }
 
 /**
- * 4. นิยาม Slash Command หลังบ้าน (/scripthub)
+ * 4. นิยาม Slash Command หลังบ้าน (/scripthub) - รวมเหลือคำสั่ง setup ตัวเดียว
  */
 const scripthubSlashCommand = new SlashCommandBuilder()
     .setName("scripthub")
     .setDescription("[ 🏎️ ] ระบบจัดการแผงเลือกแมพและแจกสคริปต์ KrakenHub")
     .addSubcommand(sub =>
-        sub.setName("send")
-            .setDescription("[ 📨 ] ส่งแผงเลือกแมพ (Hub Selector) ไปยังห้องที่เลือก")
+        sub.setName("setup")
+            .setDescription("[ ⚙️ ] ตั้งค่าและส่งแผงแจกสคริปต์เข้าห้องที่เลือก")
             .addChannelOption(o =>
                 o.setName("channel")
-                    .setDescription("ห้องที่จะส่งแผงเลือกแมพ")
+                    .setDescription("ห้องที่จะส่งแผงแจกสคริปต์")
                     .addChannelTypes(ChannelType.GuildText)
                     .setRequired(true)
             )
-    )
-    .addSubcommand(sub =>
-        sub.setName("direct")
-            .setDescription("[ 🚀 ] ส่งโพสต์แจกสคริปต์ของแมพนั้นเดี่ยวๆ ลงห้องทันที")
             .addStringOption(o =>
                 o.setName("map")
-                    .setDescription("รหัสแมพ เช่น mahanakhon, sailueat, voxel")
-                    .setRequired(true)
-            )
-            .addChannelOption(o =>
-                o.setName("channel")
-                    .setDescription("ห้องที่จะส่งโพสต์แจก")
-                    .addChannelTypes(ChannelType.GuildText)
+                    .setDescription("เลือกรูปแบบแผงแจก (ค่าเริ่มต้น: แผงเลือกแมพรวมทุกเกม)")
                     .setRequired(false)
+                    .addChoices(
+                        { name: "🌐 แผงเลือกแมพรวม (Hub Selector - ปกแดง มีตัวเลื่อนเลือกแมพ)", value: "all" },
+                        { name: "🏎️ แมพ MAHANAKHON RACING (เฉพาะแมพนี้ตรงๆ)", value: "mahanakhon" },
+                        { name: "🥊 แมพ SAI LUEAT ARCHIWA (เฉพาะแมพนี้ตรงๆ)", value: "sailueat" },
+                        { name: "🔫 แมพ VOXEL WARS (เฉพาะแมพนี้ตรงๆ)", value: "voxel" }
+                    )
             )
-    )
-    .addSubcommand(sub =>
-        sub.setName("list")
-            .setDescription("[ 📋 ] ดูรายชื่อแมพและสคริปต์ทั้งหมดในหลังบ้าน")
-    )
-    .addSubcommand(sub =>
-        sub.setName("setscript")
-            .setDescription("[ ✏️ ] แก้ไขโค้ด loadstring ของแมพที่ต้องการ")
-            .addStringOption(o =>
-                o.setName("map")
-                    .setDescription("รหัสแมพ เช่น mahanakhon")
-                    .setRequired(true)
-            )
-            .addStringOption(o =>
-                o.setName("code")
-                    .setDescription("โค้ด loadstring ใหม่")
-                    .setRequired(true)
-            )
-    )
-    .addSubcommand(sub =>
-        sub.setName("add")
-            .setDescription("[ ➕ ] เพิ่มแมพใหม่เข้าระบบแจกสคริปต์")
-            .addStringOption(o => o.setName("id").setDescription("รหัสย่อภาษาอังกฤษ เช่น bloxfruits").setRequired(true))
-            .addStringOption(o => o.setName("name").setDescription("ชื่อแมพ เช่น BLOX FRUITS").setRequired(true))
-            .addStringOption(o => o.setName("script").setDescription("โค้ด loadstring ของแมพนี้").setRequired(true))
-            .addStringOption(o => o.setName("emoji").setDescription("อีโมจิประจำแมพ เช่น 🍎 หรือ 🏎️").setRequired(false))
-            .addStringOption(o => o.setName("description").setDescription("คำอธิบายสั้นๆ").setRequired(false))
-    )
-    .addSubcommand(sub =>
-        sub.setName("remove")
-            .setDescription("[ 🗑️ ] ลบแมพออกจากระบบ")
-            .addStringOption(o => o.setName("id").setDescription("รหัสแมพที่ต้องการลบ").setRequired(true))
     );
 
 /**
- * 5. ฟังก์ชันประมวลผลคำสั่ง Slash Command (/scripthub)
+ * 5. ฟังก์ชันประมวลผลคำสั่ง Slash Command (/scripthub setup)
  */
 async function handleScriptHubCommand(interaction) {
     if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
@@ -287,142 +251,46 @@ async function handleScriptHubCommand(interaction) {
     const sub = interaction.options.getSubcommand();
     const maps = loadMaps();
 
-    // /scripthub send [channel]
-    if (sub === "send") {
+    // /scripthub setup channel:#ห้อง [map:all/mahanakhon/...]
+    if (sub === "setup") {
         const targetChannel = interaction.options.getChannel("channel");
+        const mapChoice = interaction.options.getString("map") || "all";
         await interaction.deferReply({ ephemeral: true });
 
-        const hubPanel = makeHubPanel(maps);
         try {
-            await targetChannel.send({
-                content: hubPanel.content,
-                files: hubPanel.files,
-                components: hubPanel.components
-            });
-            return interaction.editReply({
-                content: `✅ ส่งแผงเลือกแมพแจกสคริปต์ KrakenHub ไปยังห้อง <#${targetChannel.id}> เรียบร้อยแล้ว!`
-            });
+            if (mapChoice === "all") {
+                // ส่งแผงเลือกแมพรวม (รูปที่ 1: ปกแดง KRAKEN HUB + Dropdown)
+                const hubPanel = makeHubPanel(maps);
+                await targetChannel.send({
+                    content: hubPanel.content,
+                    files: hubPanel.files,
+                    components: hubPanel.components
+                });
+                return interaction.editReply({
+                    content: `✅ ส่งแผงเลือกแมพรวม **KrakenHub Script Collection** ไปยังห้อง <#${targetChannel.id}> เรียบร้อยแล้ว!`
+                });
+            } else {
+                // ส่งโพสต์แจกสคริปต์เฉพาะแมพที่เลือกเดี่ยวๆ (รูปที่ 2: ปกเกม + หัวข้อใหญ่ + ปุ่มคัดลอก)
+                const panel = makeMapDeliveryPanel(mapChoice, false);
+                if (!panel) {
+                    return interaction.editReply({
+                        content: `❌ ไม่พบข้อมูลแมพ \`${mapChoice}\` ในระบบ`
+                    });
+                }
+                await targetChannel.send({
+                    content: panel.content,
+                    files: panel.files,
+                    components: panel.components
+                });
+                return interaction.editReply({
+                    content: `✅ ส่งโพสต์แจกสคริปต์แมพ **${mapChoice.toUpperCase()}** ไปยังห้อง <#${targetChannel.id}> เรียบร้อยแล้ว!`
+                });
+            }
         } catch (err) {
             return interaction.editReply({
                 content: `❌ ส่งข้อความไม่สำเร็จ: ${err.message}`
             });
         }
-    }
-
-    // /scripthub direct [map] [channel]
-    if (sub === "direct") {
-        const mapId = interaction.options.getString("map").toLowerCase().trim();
-        const targetChannel = interaction.options.getChannel("channel") || interaction.channel;
-        await interaction.deferReply({ ephemeral: true });
-
-        const panel = makeMapDeliveryPanel(mapId, false);
-        if (!panel) {
-            return interaction.editReply({
-                content: `❌ ไม่พบรหัสแมพ \`${mapId}\` ในระบบ! กรุณาใช้ \`/scripthub list\` เพื่อดูรหัสที่มี`
-            });
-        }
-
-        try {
-            await targetChannel.send({
-                content: panel.content,
-                files: panel.files,
-                components: panel.components
-            });
-            return interaction.editReply({
-                content: `✅ ส่งโพสต์แจกสคริปต์แมพ **${mapId.toUpperCase()}** ไปยัง <#${targetChannel.id}> เรียบร้อยแล้ว!`
-            });
-        } catch (err) {
-            return interaction.editReply({
-                content: `❌ ส่งข้อความไม่สำเร็จ: ${err.message}`
-            });
-        }
-    }
-
-    // /scripthub list
-    if (sub === "list") {
-        const embed = new EmbedBuilder()
-            .setColor(0xED4245)
-            .setTitle("🏎️ KrakenHub | รายการแมพและสคริปต์ในหลังบ้าน")
-            .setDescription(`มีแมพในระบบทั้งหมด **${Object.keys(maps).length}** แมพ:`)
-            .setTimestamp();
-
-        for (const [id, m] of Object.entries(maps)) {
-            embed.addFields({
-                name: `${m.emoji || "🎮"} ${m.name} (\`ID: ${id}\`)`,
-                value: `• **ชื่อหัวข้อ:** ${m.title || m.name}\n• **คำอธิบาย:** ${m.description || "ไม่มี"}\n• **โค้ดสคริปต์:** \`${(m.script || "").slice(0, 90)}...\``,
-                inline: false
-            });
-        }
-
-        return interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    // /scripthub setscript [map] [code]
-    if (sub === "setscript") {
-        const mapId = interaction.options.getString("map").toLowerCase().trim();
-        const newCode = interaction.options.getString("code").trim();
-
-        if (!maps[mapId]) {
-            return interaction.reply({
-                content: `❌ ไม่พบแมพ \`${mapId}\` ในระบบ กรุณาใช้ \`/scripthub list\` เช็กชื่อแมพก่อน`,
-                ephemeral: true
-            });
-        }
-
-        maps[mapId].script = newCode;
-        saveMaps(maps);
-
-        return interaction.reply({
-            content: `✅ อัปเดตสคริปต์สำหรับแมพ **${maps[mapId].name}** เรียบร้อยแล้ว!\n\`\`\`lua\n${newCode.slice(0, 300)}\n\`\`\``,
-            ephemeral: true
-        });
-    }
-
-    // /scripthub add [id] [name] [script] [emoji] [description]
-    if (sub === "add") {
-        const id = interaction.options.getString("id").toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
-        const name = interaction.options.getString("name").trim();
-        const script = interaction.options.getString("script").trim();
-        const emoji = interaction.options.getString("emoji") || "🎮";
-        const description = interaction.options.getString("description") || `สคริปต์สำหรับ ${name}`;
-
-        if (!id) {
-            return interaction.reply({ content: "❌ รหัส ID แมพต้องเป็นภาษาอังกฤษและตัวเลขเท่านั้น", ephemeral: true });
-        }
-
-        maps[id] = {
-            id: id,
-            name: name,
-            title: `แมพ ${name}`,
-            emoji: emoji,
-            description: description,
-            imagePath: path.join(ASSETS_DIR, "krakenhub_hub.jpg"),
-            imageUrl: null,
-            script: script
-        };
-        saveMaps(maps);
-
-        return interaction.reply({
-            content: `✅ เพิ่มแมพ **${name}** (\`ID: ${id}\`) เข้าระบบแจกสคริปต์เรียบร้อยแล้ว!`,
-            ephemeral: true
-        });
-    }
-
-    // /scripthub remove [id]
-    if (sub === "remove") {
-        const id = interaction.options.getString("id").toLowerCase().trim();
-        if (!maps[id]) {
-            return interaction.reply({ content: `❌ ไม่พบแมพ \`${id}\` ในระบบ`, ephemeral: true });
-        }
-
-        const name = maps[id].name;
-        delete maps[id];
-        saveMaps(maps);
-
-        return interaction.reply({
-            content: `🗑️ ลบแมพ **${name}** ออกจากระบบเรียบร้อยแล้ว`,
-            ephemeral: true
-        });
     }
 }
 
