@@ -43,6 +43,9 @@ function trackBotDelete(messageId, reason, extra = {}) {
 // Regex to detect Discord server invites (discord.gg, discord.com/invite, discordapp.com/invite, dsc.gg, discord.me, etc.)
 const DISCORD_INVITE_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:discord\.(?:gg|io|me|li|link)|discord(?:app)?\.com\/invite|dsc\.gg|invite\.gg)\/([a-zA-Z0-9_\-]+)/gi;
 
+// Regex to detect phishing domains (fake Roblox login, fake Discord Nitro gifts, Steam scams, IP loggers)
+const PHISHING_REGEX = /(?:https?:\/\/)?(?:[a-zA-Z0-9_\-]+\.)*(roblx\.com|roblox\.com\.[a-z]{2,3}|roblox-[a-zA-Z0-9_\-]+\.[a-zA-Z]{2,}|discorcl[a-zA-Z0-9_\-]*\.[a-zA-Z]{2,}|dlscord[a-zA-Z0-9_\-]*\.[a-zA-Z]{2,}|discord-gift[a-zA-Z0-9_\-]*\.[a-zA-Z]{2,}|nitro-[a-zA-Z0-9_\-]+\.[a-zA-Z]{2,}|steamcommun[a-zA-Z0-9_\-]+\.[a-zA-Z]{2,}|grabify\.link|iplogger\.[a-zA-Z]{2,}|freerobux[a-zA-Z0-9_\-]*\.[a-zA-Z]{2,})/gi;
+
 function settingsFor(config, guildId) {
     config[guildId] ??= {};
     const defaultLogChannel = guildId === "1550132569432137903" ? "1563869910474428449" : null;
@@ -53,6 +56,7 @@ function settingsFor(config, guildId) {
         antiWebhookSpam: true,
         antiEveryoneBan: true,
         antiDiscordLink: true,
+        antiPhishing: true,
         webhookSpamLimit: 3,
         webhookWindowSeconds: 5,
         autoDeleteSpamWebhook: true,
@@ -72,6 +76,7 @@ function settingsFor(config, guildId) {
     sec.antiWebhookSpam ??= true;
     sec.antiEveryoneBan ??= true;
     sec.antiDiscordLink ??= true;
+    sec.antiPhishing ??= true;
     sec.webhookSpamLimit ??= 3;
     sec.webhookWindowSeconds ??= 5;
     sec.autoDeleteSpamWebhook ??= true;
@@ -318,6 +323,67 @@ function startSecurity(client, config, saveConfig) {
         return true;
     }
 
+    async function handleAntiPhishing(message, isEdit = false) {
+        if (!message || !message.guild || !message.author) return false;
+        if (message.author.id === client.user?.id) return false;
+
+        const s = settingsFor(config, message.guild.id);
+        if (!s.enabled || s.antiPhishing === false) return false;
+
+        const rawContent = String(message.content || "");
+        if (!rawContent) return false;
+
+        const cleanContent = rawContent.replace(/[\u200B-\u200D\uFEFF]/g, "");
+        PHISHING_REGEX.lastIndex = 0;
+        const matches = [...cleanContent.matchAll(PHISHING_REGEX)];
+        if (!matches || matches.length === 0) return false;
+
+        const detectedLinks = matches.map(m => m[0]);
+        const detectedDomains = matches.map(m => m[1] || m[0]);
+
+        trackBotDelete(message.id, `🚨 ระบบลบอัตโนมัติ: ลิงก์ฟิชชิ่ง / หลอกขโมยไอดี (${detectedDomains.join(", ")})`, {
+            detectedLinks,
+            targetId: message.author.id,
+            targetTag: message.author.tag
+        });
+
+        // ลบข้อความทันที
+        await message.delete().catch(() => null);
+
+        // สั่ง Timeout สมาชิก 24 ชั่วโมง เพื่อระงับบัญชีที่อาจโดนแฮกหรือเป็นบอทสแปม
+        let timeoutSuccess = false;
+        if (message.member?.moderatable) {
+            try {
+                await message.member.timeout(86400 * 1000, "Kraken Anti-Phishing: ส่งลิงก์หลอกขโมยไอดี / ฟิชชิ่ง");
+                timeoutSuccess = true;
+            } catch {}
+        }
+
+        // ส่งข้อความเตือนในห้องชั่วคราว (ลบตัวเองใน 8 วินาที)
+        try {
+            const warnEmbed = new EmbedBuilder()
+                .setColor(0xED4245)
+                .setTitle("🛡️ Kraken Security • Anti-Phishing Guard")
+                .setDescription(`🚨 <@${message.author.id}> **ตรวจพบลิงก์ฟิชชิ่ง / เว็บไซต์หลอกขโมยไอดี!**\n*(ระบบได้ลบข้อความและ${timeoutSuccess ? "สั่ง Timeout 24 ชั่วโมง" : "ระงับข้อความ"}เรียบร้อยแล้ว)*`)
+                .setTimestamp();
+
+            const warnNotice = await message.channel.send({ embeds: [warnEmbed] }).catch(() => null);
+            if (warnNotice) setTimeout(() => warnNotice.delete().catch(() => null), 8000);
+        } catch {}
+
+        // ส่ง Log เข้าห้อง Security Log
+        await log(message.guild, config, "🚨 ตรวจพบและสกัดกั้นลิงก์ฟิชชิ่ง (Anti-Phishing)", `ตรวจพบข้อความที่มีลิงก์หลอกขโมยไอดี / เว็บไซต์อันตราย ${isEdit ? "(ผ่านการแก้ไขข้อความ)" : ""}`, 0xED4245, [
+            { name: "ผู้ส่ง", value: `<@${message.author.id}> (${message.author.tag || message.author.id})`, inline: true },
+            { name: "ผู้ดำเนินการ", value: `🤖 <@${client.user.id}> (ระบบความปลอดภัย)`, inline: true },
+            { name: "ห้องที่เกิดเหตุ", value: `<#${message.channel.id}>`, inline: true },
+            { name: "โดเมนที่ตรวจจับ", value: detectedDomains.join(", ") || "Phishing Domain", inline: true },
+            { name: "การดำเนินการ", value: timeoutSuccess ? "🛡️ **ลบข้อความทันที + Timeout สมาชิก 24 ชั่วโมง**" : "🛡️ **ลบข้อความทันที**", inline: true },
+            { name: "ข้อความตัวอย่าง", value: String(rawContent).slice(0, 500) || "[ไม่มีเนื้อหา]", inline: false }
+        ]);
+
+        return true;
+    }
+
     client.on("guildMemberAdd", async member => {
         const s = settingsFor(config, member.guild.id);
         if (!s.enabled || !s.antiRaid) return;
@@ -346,6 +412,10 @@ function startSecurity(client, config, saveConfig) {
         // 0. ANTI-EVERYONE TAG BAN (สงวนสิทธิ์เฉพาะหัวดิสเท่านั้น)
         const everyoneBlocked = await handleAntiEveryone(message, false);
         if (everyoneBlocked) return;
+
+        // 0.3. ANTI-PHISHING / SCAM (ระบบดักจับเว็บฟิชชิ่ง / หลอกขโมยไอดี)
+        const phishBlocked = await handleAntiPhishing(message, false);
+        if (phishBlocked) return;
 
         // 0.5. ANTI-DISCORD LINK (ระบบป้องกันส่งลิงก์ดิส & บอทลบอัตโนมัติ)
         const linkBlocked = await handleAntiDiscordLink(message, false);
@@ -627,6 +697,10 @@ function startSecurity(client, config, saveConfig) {
         // 0. ANTI-EVERYONE TAG BAN ON EDIT (ป้องกันการแก้ไขข้อความเพื่อแท็ก @everyone)
         const everyoneBlocked = await handleAntiEveryone(after, true);
         if (everyoneBlocked) return;
+
+        // 0.3. ANTI-PHISHING / SCAM ON EDIT (ระบบดักจับเว็บฟิชชิ่งผ่านการแก้ไขข้อความ)
+        const phishBlocked = await handleAntiPhishing(after, true);
+        if (phishBlocked) return;
 
         // 0.5. ANTI-DISCORD LINK ON EDIT (ลบข้อความแก้ไขที่มีลิงก์ Discord อัตโนมัติ)
         const linkBlocked = await handleAntiDiscordLink(after, true);

@@ -316,9 +316,26 @@ const commands = [
             .addBooleanOption(o => o.setName("enabled").setDescription("เปิด/ปิดระบบแบนคนแท็ก @everyone").setRequired(true)))
         .addSubcommand(s => s.setName("antilink").setDescription("[ 🔗 ] ตั้งค่าระบบป้องกันการส่งลิงก์ Discord / คำเชิญเซิร์ฟเวอร์")
             .addBooleanOption(o => o.setName("enabled").setDescription("เปิด/ปิดระบบลบลิงก์ Discord อัตโนมัติ").setRequired(true)))
+        .addSubcommand(s => s.setName("antiscam").setDescription("[ 🛡️ ] ตั้งค่าระบบป้องกันลิงก์ฟิชชิ่ง / หลอกขโมยไอดี (Anti-Phishing)")
+            .addBooleanOption(o => o.setName("enabled").setDescription("เปิด/ปิดระบบลบลิงก์ฟิชชิ่งและ Timeout อัตโนมัติ").setRequired(true)))
         .addSubcommand(s => s.setName("log").setDescription("[ 📜 ] ตั้งค่าห้องสำหรับบันทึก Security Logs")
             .addChannelOption(o => o.setName("channel").setDescription("เลือกห้อง Log").addChannelTypes(ChannelType.GuildText).setRequired(true)))
         .addSubcommand(s => s.setName("test").setDescription("[ 🧪 ] ทดสอบส่ง Log ความปลอดภัย")),
+    new SlashCommandBuilder()
+        .setName("script-update").setDescription("[ 📢 ] ประกาศอัปเดตสคริปต์ KrakenHub ลงห้องประกาศ")
+        .addStringOption(o => o.setName("game").setDescription("ชื่อเกมที่อัปเดต เช่น Anime Dice, Fisch, Sailueat Archiwa").setRequired(true))
+        .addStringOption(o => o.setName("version").setDescription("เวอร์ชัน เช่น v3.4.1 หรือ Latest").setRequired(true))
+        .addStringOption(o => o.setName("features").setDescription("สิ่งที่เพิ่มเข้ามาใหม่ (ใช้ \\n เพื่อขึ้นบรรทัดใหม่)").setRequired(true))
+        .addStringOption(o => o.setName("fixes").setDescription("สิ่งที่แก้ไข / ปรับปรุง (ใช้ \\n เพื่อขึ้นบรรทัดใหม่)").setRequired(false))
+        .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งประกาศ (ถ้าไม่เลือกจะส่งห้องปัจจุบัน)").addChannelTypes(ChannelType.GuildText).setRequired(false))
+        .addStringOption(o => o.setName("loader").setDescription("โค้ดสคริปต์ Loader (ถ้าไม่ระบุจะใช้ตัวหลักของ KrakenHub)").setRequired(false))
+        .addStringOption(o => o.setName("ping").setDescription("เลือกแท็กแจ้งเตือน").setRequired(false)
+            .addChoices(
+                { name: "🔕 ไม่แท็ก (None)", value: "none" },
+                { name: "🔔 แท็ก @here", value: "here" },
+                { name: "📢 แท็ก @everyone", value: "everyone" }
+            ))
+        .addStringOption(o => o.setName("image").setDescription("ลิงก์รูปภาพ Banner ใน Embed (ถ้ามี)").setRequired(false)),
 ].map(command => command.toJSON());
 // ==================== SERVER WHITELIST ====================
 function getAllowedGuildIds() {
@@ -1090,6 +1107,34 @@ client.on("interactionCreate", async interaction => {
             await interaction.reply({ content: "🔒 กำลังปิด Ticket ห้องนี้จะถูกลบใน 5 วินาที" });
             return setTimeout(() => interaction.channel?.delete().catch(error => console.log("[TICKET CLOSE ERROR]", error.message)), 5000);
         }
+
+        if (interaction.customId === "btn_copy_loader") {
+            const defaultLoader = 'loadstring(game:HttpGet("https://tinyurl.com/KrakenHubV2"))()';
+            const wlConfig = config[interaction.guildId]?.whitelist;
+            const loaderCode = wlConfig?.scriptLoader || defaultLoader;
+            return interaction.reply({
+                content: `📥 **คัดลอกโค้ดสคริปต์ KrakenHub Loader ด้านล่างไปรันได้เลย:**\n\`\`\`lua\n${loaderCode}\n\`\`\``,
+                ephemeral: true
+            });
+        }
+
+        if (interaction.customId === "btn_check_my_key") {
+            const userId = interaction.user.id;
+            const userWhitelists = config[interaction.guildId]?.whitelist?.users || {};
+            const userKeyInfo = userWhitelists[userId];
+            if (userKeyInfo && userKeyInfo.key) {
+                const expiresAt = userKeyInfo.expiresAt ? new Date(userKeyInfo.expiresAt).toLocaleDateString("th-TH") : "ถาวร (Lifetime)";
+                return interaction.reply({
+                    content: `🔑 **ข้อมูลคีย์ KrakenHub ของคุณ:**\n• **รหัสคีย์:** \`${userKeyInfo.key}\`\n• **วันหมดอายุ:** ${expiresAt}\n• **สถานะ:** 🟢 พร้อมใช้งานในระบบ`,
+                    ephemeral: true
+                });
+            } else {
+                return interaction.reply({
+                    content: `⚠️ **คุณยังไม่มีคีย์ในระบบ หรือยังไม่ได้รีดึมคีย์**\nกรุณารีดึมคีย์ที่ได้รับจากร้านค้าในห้อง Whitelist หรือเปิด Ticket เพื่อติดต่อสอบถามทีมงานครับ`,
+                    ephemeral: true
+                });
+            }
+        }
         return;
     }
     if (!interaction.isChatInputCommand()) return;
@@ -1131,6 +1176,7 @@ client.on("interactionCreate", async interaction => {
                     { name: "🛡️ ระบบรวม", value: s.enabled ? "🟢 เปิดใช้งาน" : "🔴 ปิด", inline: true },
                     { name: "🔨 Anti-Everyone Ban", value: s.antiEveryoneBan !== false ? "🟢 เปิดใช้งาน (ยกเว้นหัวดิส)" : "🔴 ปิด", inline: true },
                     { name: "🔗 Anti-Discord Link", value: s.antiDiscordLink !== false ? "🟢 เปิดใช้งาน (ลบลิงก์ดิสอัตโนมัติ)" : "🔴 ปิด", inline: true },
+                    { name: "🛡️ Anti-Phishing Guard", value: s.antiPhishing !== false ? "🟢 เปิดใช้งาน (Timeout 24 ชม.)" : "🔴 ปิด", inline: true },
                     { name: "🚨 Anti-Raid", value: s.antiRaid ? "🟢 เปิด" : "🔴 ปิด", inline: true },
                     { name: "💬 Anti-Spam (สมาชิก)", value: s.antiSpam ? "🟢 เปิด" : "🔴 ปิด", inline: true },
                     { name: "🪝 Anti-Webhook Spam", value: s.antiWebhookSpam ? "🟢 เปิดใช้งาน (Active)" : "🔴 ปิด", inline: true },
@@ -1206,6 +1252,23 @@ client.on("interactionCreate", async interaction => {
             return interaction.reply({ embeds: [embed], ephemeral: true });
         }
 
+        if (sub === "antiscam") {
+            const enabled = interaction.options.getBoolean("enabled", true);
+            s.antiPhishing = enabled;
+            saveConfig(config);
+
+            const embed = new EmbedBuilder()
+                .setTitle("✅ บันทึกการตั้งค่า Anti-Phishing สำเร็จ")
+                .setColor(enabled ? 0x57F287 : 0xED4245)
+                .setDescription(
+                    enabled
+                        ? `🟢 เปิดระบบป้องกันลิงก์ฟิชชิ่งสำหรับ **${interaction.guild.name}** แล้ว\n\n🛡️ *เมื่อตรวจพบเว็บหลอกแจก Nitro ปลอม, เว็บ Roblox ปลอม, หรือเว็บดูดรหัส บอทจะลบทันทีและสั่ง Timeout 24 ชั่วโมง*`
+                        : `🔴 ปิดระบบป้องกันลิงก์ฟิชชิ่งเรียบร้อยแล้ว`
+                )
+                .setTimestamp();
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
         if (sub === "log") {
             const ch = interaction.options.getChannel("channel", true);
             s.logChannelId = ch.id;
@@ -1220,6 +1283,98 @@ client.on("interactionCreate", async interaction => {
                 { name: "Webhook Spam Limit", value: `${s.webhookSpamLimit || 3} ข้อความ / ${s.webhookWindowSeconds || 5} วินาที`, inline: true }
             ], saveConfig);
             return interaction.reply({ content: "✅ ส่งข้อความทดสอบ Security Log ไปยังห้องที่ตั้งค่าไว้เรียบร้อยแล้ว", ephemeral: true });
+        }
+    }
+
+    if (interaction.commandName === "script-update") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageMessages) && !interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator) && interaction.guild.ownerId !== interaction.user.id) {
+            return interaction.reply({ content: "❌ เฉพาะแอดมินหรือทีมงานเท่านั้นที่สามารถส่งประกาศอัปเดตสคริปต์ได้", ephemeral: true });
+        }
+
+        const game = interaction.options.getString("game", true);
+        const version = interaction.options.getString("version", true);
+        const featuresRaw = interaction.options.getString("features", true);
+        const fixesRaw = interaction.options.getString("fixes");
+        const targetChannel = interaction.options.getChannel("channel") || interaction.channel;
+        const pingType = interaction.options.getString("ping") || "none";
+        const customLoader = interaction.options.getString("loader");
+        const customImage = interaction.options.getString("image");
+
+        const defaultLoader = 'loadstring(game:HttpGet("https://tinyurl.com/KrakenHubV2"))()';
+        const loaderCode = customLoader || config[interaction.guildId]?.whitelist?.scriptLoader || defaultLoader;
+
+        // ฟอร์แมตรายการ Features & Fixes ให้สวยงาม
+        const formatList = text => {
+            if (!text) return "";
+            return text.split(/\\n|\n/).map(line => line.trim()).filter(Boolean).map(line => {
+                if (line.startsWith("•") || line.startsWith("-") || line.startsWith("*")) return line;
+                return `• ${line}`;
+            }).join("\n");
+        };
+
+        const formattedFeatures = formatList(featuresRaw);
+        const formattedFixes = fixesRaw ? formatList(fixesRaw) : null;
+
+        const embed = new EmbedBuilder()
+            .setColor(0x5865F2)
+            .setAuthor({
+                name: "KrakenHub Development Team",
+                iconURL: client.user.displayAvatarURL({ dynamic: true })
+            })
+            .setTitle(`🚀 KRAKENHUB SCRIPT UPDATE • ${game.toUpperCase()}`)
+            .setDescription(`🎮 **เกม:** **${game}** • 🏷️ **เวอร์ชัน:** \`${version}\`\nอัปเดตระบบสคริปต์เวอร์ชันล่าสุดพร้อมให้ใช้งานแล้วบนตัวรันทุกตัว!`)
+            .addFields(
+                { name: "✨ สิ่งที่เพิ่มเข้ามาใหม่ (New Features)", value: formattedFeatures.slice(0, 1024) }
+            );
+
+        if (formattedFixes) {
+            embed.addFields({ name: "🔧 การแก้ไข & ปรับปรุง (Fixes & Improvements)", value: formattedFixes.slice(0, 1024) });
+        }
+
+        embed.addFields({
+            name: "💻 ตัวสคริปต์ Loader (นำไปรันในเกม)",
+            value: `\`\`\`lua\n${loaderCode}\n\`\`\``
+        });
+
+        if (customImage) {
+            embed.setImage(customImage);
+        }
+
+        embed.setFooter({
+            text: `KrakenHub Multi-Game System • อัปเดตโดย ${interaction.user.tag}`
+        }).setTimestamp();
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId("btn_copy_loader")
+                .setLabel("📥 คัดลอก Loader")
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId("btn_check_my_key")
+                .setLabel("🔑 ตรวจสอบคีย์ของฉัน")
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        let pingContent = null;
+        if (pingType === "here") pingContent = "@here";
+        else if (pingType === "everyone") pingContent = "@everyone";
+
+        try {
+            await targetChannel.send({
+                content: pingContent,
+                embeds: [embed],
+                components: [row]
+            });
+
+            return interaction.reply({
+                content: `✅ ส่งประกาศอัปเดตสคริปต์ **${game}** (\`${version}\`) ไปยังห้อง <#${targetChannel.id}> เรียบร้อยแล้ว!`,
+                ephemeral: true
+            });
+        } catch (err) {
+            return interaction.reply({
+                content: `❌ ไม่สามารถส่งประกาศได้: ${err.message}`,
+                ephemeral: true
+            });
         }
     }
 
