@@ -1,0 +1,28 @@
+{
+  "banner": {
+    "imagePath": "D:\\roblox-script\\KrakenVoiceBot\\assets\\krakenhub_hub.jpg",
+    "imageUrl": null
+  },
+  "maps": {
+    "mahanakhon": {
+      "id": "mahanakhon",
+      "name": "MAHANAKHON RACING",
+      "status": "online"
+    },
+    "voxel": {
+      "id": "voxel",
+      "name": "VOXEL WARS",
+      "status": "online"
+    },
+    "sailueat": {
+      "id": "sailueat",
+      "name": "SAI LUEAT ARCHIWA",
+      "status": "updating"
+    },
+    "bloxfruits": {
+      "id": "bloxfruits",
+      "name": "BLOX FRUITS",
+      "status": "offline"
+    }
+  }
+}

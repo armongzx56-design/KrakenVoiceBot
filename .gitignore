@@ -5,4 +5,7 @@ data/*.tmp
 data/scripthub_store.json
 data/scripthub_panels.json
 data/scripthub_store_panels.json
+data/supported_store.json
+data/supported_panels.json
+data/supported_store_panels.json
 

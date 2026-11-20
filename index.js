@@ -175,6 +175,14 @@ const {
     handleScriptHubAutocomplete
 } = require("./systems/scripthub");
 
+const {
+    supportedSlashCommand,
+    handleSupportedCommand,
+    handleSupportedInteraction,
+    handleSupportedAutocomplete,
+    updateAllSupportedPanels
+} = require("./systems/supported");
+
 const commands = [
     new SlashCommandBuilder()
         .setName("help")
@@ -319,6 +327,7 @@ const commands = [
             ))
         .addStringOption(o => o.setName("image").setDescription("ลิงก์รูปภาพ Banner ใน Embed (ถ้ามี)").setRequired(false)),
     scripthubSlashCommand,
+    supportedSlashCommand,
 ].map(command => {
     command.setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator);
     return command.toJSON();
@@ -889,7 +898,7 @@ client.once("clientReady", async () => {
         }
     })();
 
-    // Auto-sync ScriptHub live panels across all channels on bot startup
+    // Auto-sync ScriptHub & Supported live panels across all channels on bot startup
     setTimeout(async () => {
         try {
             const { updateAllLivePanels } = require("./systems/scripthub");
@@ -899,6 +908,16 @@ client.once("clientReady", async () => {
             }
         } catch (err) {
             console.error("[SCRIPTHUB READY SYNC ERR]", err.message);
+        }
+
+        try {
+            const { updateAllSupportedPanels } = require("./systems/supported");
+            const syncedSupported = await updateAllSupportedPanels(client);
+            if (syncedSupported > 0) {
+                console.log(`[SUPPORTED READY SYNC] Synced ${syncedSupported} live panels on startup`);
+            }
+        } catch (err) {
+            console.error("[SUPPORTED READY SYNC ERR]", err.message);
         }
     }, 4000);
 });
@@ -1086,6 +1105,16 @@ client.on("interactionCreate", async interaction => {
     if (interaction.isAutocomplete() && interaction.commandName === "scripthub") {
         return handleScriptHubAutocomplete(interaction);
     }
+    if (interaction.isAutocomplete() && interaction.commandName === "supported") {
+        return handleSupportedAutocomplete(interaction);
+    }
+
+    // Supported Maps interactions (Select Menu, Buttons & Modals)
+    if ((interaction.isStringSelectMenu() && interaction.customId.startsWith("supported_")) ||
+        (interaction.isButton() && interaction.customId.startsWith("supported_")) ||
+        (interaction.isModalSubmit() && interaction.customId.startsWith("supported_"))) {
+        return handleSupportedInteraction(interaction);
+    }
 
     // ScriptHub interactions (Select Menu, Buttons & Modals)
     if ((interaction.isStringSelectMenu() && interaction.customId.startsWith("scripthub_")) ||
@@ -1147,6 +1176,10 @@ client.on("interactionCreate", async interaction => {
 
     if (interaction.commandName === "scripthub") {
         return handleScriptHubCommand(interaction);
+    }
+
+    if (interaction.commandName === "supported") {
+        return handleSupportedCommand(interaction);
     }
 
     if (interaction.commandName === "mod") {
