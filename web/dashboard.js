@@ -699,6 +699,39 @@ function startDashboard({ client, config, saveConfig, formatUptime }) {
         });
     });
 
+    app.get("/api/ticket/inspect", async (req, res) => {
+        try {
+            const { updateLiveTicketPanels, loadTicketSettings } = require("../systems/ticket");
+            const settings = loadTicketSettings();
+            const results = [];
+            for (const [gid, conf] of Object.entries(settings)) {
+                if (!conf.panelChannelId) continue;
+                const channel = client.channels.cache.get(conf.panelChannelId) || await client.channels.fetch(conf.panelChannelId).catch(() => null);
+                if (!channel || !channel.isTextBased()) continue;
+                const msgs = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+                if (!msgs) continue;
+                for (const m of msgs.values()) {
+                    if (m.author?.id === client.user?.id && m.components?.some(r => r.components?.some(c => c.customId === "ticket_open_btn"))) {
+                        results.push({
+                            guildId: gid,
+                            channelId: channel.id,
+                            channelName: channel.name,
+                            messageId: m.id,
+                            components: m.components.map(r => r.components.map(c => ({
+                                customId: c.customId,
+                                label: c.label,
+                                emoji: c.emoji
+                            })))
+                        });
+                    }
+                }
+            }
+            res.json({ ok: true, count: results.length, panels: results });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
     app.listen(PORT, () => console.log("[WEB] Kraken Control Panel listening on port " + PORT));
 }
 

@@ -68,9 +68,9 @@ const ANIMATED = {
     sparkle: "<a:2659tadapurple:1569102206798397571>",
     coin: "<a:933416goldenspincoin:1569102317305860226>",
     fire: "<a:1310107692995706900:1570844182317113364>",
-    ticket: "<a:437007ticket:1569102283067621499>",
-    online: null,
-    offline: null
+    ticket: "<a:Tickets:1573373417367806103>",
+    online: "<a:online:1573373414373199933>",
+    offline: "<a:offline:1573373407104335982>"
 };
 
 const DEFAULT_DATA = {
@@ -79,9 +79,9 @@ const DEFAULT_DATA = {
         imageUrl: null
     },
     emojis: {
-        online: null,
-        offline: null,
-        updating: null
+        online: "<a:online:1573373414373199933>",
+        offline: "<a:offline:1573373407104335982>",
+        updating: "🟡"
     },
     maps: {
         mahanakhon: { id: "mahanakhon", name: "MAHANAKHON RACING", status: "online" },

@@ -19,7 +19,7 @@ const EMOJIS = {
     rightWing: "<a:602393rightangleallwhitewing:1569102295738884217>",
     pinkArrow: "<a:998057pinkarrow:1569102319105089637>",
     catPaw: "<a:785173catpaw:1569102307155779649>",
-    ticket: "<a:437007ticket:1569102283067621499>",
+    ticket: "<a:Tickets:1573373417367806103>",
     goldCoin: "<a:933416goldenspincoin:1569102317305860226>",
     thumbsUp: "<:460044catthumbsup:1569102289090912346>"
 };

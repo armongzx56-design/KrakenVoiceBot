@@ -4,9 +4,9 @@
     "imageUrl": null
   },
   "emojis": {
-    "online": null,
-    "offline": null,
-    "updating": null
+    "online": "<a:online:1573373414373199933>",
+    "offline": "<a:offline:1573373407104335982>",
+    "updating": "🟡"
   },
   "maps": {
     "mahanakhon": {

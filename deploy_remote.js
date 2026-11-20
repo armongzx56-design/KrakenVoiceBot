@@ -1,6 +1,39 @@
 const { Client } = require("ssh2");
 const fs = require("fs");
 const path = require("path");
+const https = require("https");
+
+const API_KEY = "bhk_88ff8ca56c82b02cf47f6cb8f3c73f65d9ee5a0184ba8919";
+const DEPLOYMENT_ID = "e142054a-8cb7-458c-b005-c4a1bfc60f0e";
+
+function triggerPowerRestart() {
+    return new Promise(resolve => {
+        const payload = JSON.stringify({ action: "restart" });
+        const req = https.request({
+            hostname: "bot-hosting.net",
+            path: "/api/v1/deployments/" + DEPLOYMENT_ID + "/power",
+            method: "POST",
+            headers: {
+                "Authorization": "Bearer " + API_KEY,
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(payload)
+            }
+        }, res => {
+            let body = "";
+            res.on("data", c => body += c);
+            res.on("end", () => {
+                console.log(`  [POWER API] Restart response (${res.statusCode}): ${body}`);
+                resolve(body);
+            });
+        });
+        req.on("error", err => {
+            console.error("  [POWER API ERR]", err.message);
+            resolve(null);
+        });
+        req.write(payload);
+        req.end();
+    });
+}
 
 const REMOTE_CONFIG = {
     host: "fi7.bot-hosting.cloud",
@@ -69,9 +102,11 @@ async function deploy() {
     // 1. Upload index.js
     await uploadFile(sftp, path.join(LOCAL_ROOT, "index.js"), "index.js");
 
-    // 2. Upload systems/
+    // 2. Upload systems/ & web/
     console.log("\n📁 Syncing systems/ folder...");
     await syncDir(sftp, path.join(LOCAL_ROOT, "systems"), "systems");
+    console.log("\n📁 Syncing web/ folder...");
+    await syncDir(sftp, path.join(LOCAL_ROOT, "web"), "web");
 
     // 3. Upload data definitions
     console.log("\n📄 Syncing data configurations...");
@@ -97,6 +132,10 @@ async function deploy() {
     console.log("  [TRIGGER SENT] data/.reboot written successfully.");
 
     conn.end();
+
+    console.log("\n⚡ Sending Power Restart command via Bot-Hosting API...");
+    await triggerPowerRestart();
+
     console.log("\n==================================================");
     console.log("🎉 DEPLOY COMPLETE! Bot is restarting on host...");
     console.log("==================================================");
@@ -110,3 +149,4 @@ if (require.main === module) {
 }
 
 module.exports = { deploy };
+

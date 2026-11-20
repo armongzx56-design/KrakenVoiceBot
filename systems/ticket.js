@@ -138,7 +138,7 @@ function makeTicketPanel(options = {}) {
     const leftWing = "<a:633625leftangleallwhitewing:1569102297487773696>";
     const rightWing = "<a:602393rightangleallwhitewing:1569102295738884217>";
     const pinkArrow = "<a:998057pinkarrow:1569102319105089637>";
-    const ticketIcon = "<a:437007ticket:1569102283067621499>";
+    const ticketIcon = "<a:Tickets:1573373417367806103>";
 
     const embed = new EmbedBuilder()
         .setColor(0x2B2D31)
@@ -153,7 +153,7 @@ function makeTicketPanel(options = {}) {
         new ButtonBuilder()
             .setCustomId("ticket_open_btn")
             .setLabel("เปิด Ticket")
-            .setEmoji({ id: "1569102283067621499", name: "437007ticket", animated: true })
+            .setEmoji({ id: "1573373417367806103", name: "Tickets", animated: true })
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -275,7 +275,7 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
 
             if (existing) {
                 return interaction.editReply({
-                    content: `<a:437007ticket:1569102283067621499> **คุณมีห้อง Ticket ที่ยังเปิดค้างอยู่แล้วครับ:** ${existing}\n<a:998057pinkarrow:1569102319105089637> หากต้องการเปิดตั๋วใหม่ กรุณากดปุ่ม **[ ปิด Ticket ]** ในห้องเดิมก่อนนะครับ หรือคลิกเข้าห้องเดิมที่ลิงก์ด้านบนได้เลยครับ`
+                    content: `<a:Tickets:1573373417367806103> **คุณมีห้อง Ticket ที่ยังเปิดค้างอยู่แล้วครับ:** ${existing}\n<a:998057pinkarrow:1569102319105089637> หากต้องการเปิดตั๋วใหม่ กรุณากดปุ่ม **[ ปิด Ticket ]** ในห้องเดิมก่อนนะครับ หรือคลิกเข้าห้องเดิมที่ลิงก์ด้านบนได้เลยครับ`
                 });
             }
 
@@ -352,7 +352,7 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
             const pinkArrow = "<a:998057pinkarrow:1569102319105089637>";
             const ticketEmbed = new EmbedBuilder()
                 .setColor(0x2B2D31)
-                .setTitle(`<a:437007ticket:1569102283067621499> Ticket #${currentCounter}`)
+                .setTitle(`<a:Tickets:1573373417367806103> Ticket #${currentCounter}`)
                 .setDescription(
                     `ผู้เปิดตั๋ว: <@${interaction.user.id}>\n` +
                     `เวลาเปิด: <t:${openTimestamp}:R>\n` +
@@ -412,7 +412,7 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
             }
 
             return interaction.editReply({
-                content: `✅ **เปิด Ticket สำเร็จแล้วครับ!** <a:437007ticket:1569102283067621499>\n<a:998057pinkarrow:1569102319105089637> **ห้องตั๋วของคุณ:** ${channel}\n*(คลิกที่ชื่อห้องด้านบนเพื่อเข้าห้องได้ทันทีครับ)*`
+                content: `✅ **เปิด Ticket สำเร็จแล้วครับ!** <a:Tickets:1573373417367806103>\n<a:998057pinkarrow:1569102319105089637> **ห้องตั๋วของคุณ:** ${channel}\n*(คลิกที่ชื่อห้องด้านบนเพื่อเข้าห้องได้ทันทีครับ)*`
             });
         } catch (error) {
             console.log("[TICKET CREATE ERROR]", error.message);
@@ -514,6 +514,43 @@ async function handleTicketInteraction(interaction, config, saveConfig) {
     }
 }
 
+async function updateLiveTicketPanels(client) {
+    if (!client) return 0;
+    const settings = loadTicketSettings();
+    let updated = 0;
+
+    for (const [guildId, conf] of Object.entries(settings)) {
+        if (!conf.panelChannelId) continue;
+        try {
+            const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+            if (!guild) continue;
+            const channel = guild.channels.cache.get(conf.panelChannelId) || await guild.channels.fetch(conf.panelChannelId).catch(() => null);
+            if (!channel || !channel.isTextBased()) continue;
+
+            const messages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+            if (!messages) continue;
+
+            const panelMsgs = messages.filter(m => 
+                m.author?.id === client.user?.id && 
+                m.components?.some(row => row.components?.some(c => c.customId === "ticket_open_btn"))
+            );
+
+            for (const panelMsg of panelMsgs.values()) {
+                const newPanel = makeTicketPanel({ bannerUrl: conf.bannerUrl });
+                await panelMsg.edit({
+                    embeds: newPanel.embeds,
+                    components: newPanel.components
+                });
+                updated++;
+                console.log(`[TICKET READY SYNC] Successfully updated live ticket panel in #${channel.name} (${panelMsg.id}) with golden ticket emoji <a:Tickets:1573373417367806103>`);
+            }
+        } catch (err) {
+            console.error(`[TICKET PANEL SYNC ERR ${guildId}]:`, err.message);
+        }
+    }
+    return updated;
+}
+
 module.exports = {
     sendTicketPanel,
     makeTicketPanel,
@@ -523,5 +560,6 @@ module.exports = {
     saveTicketSettings,
     loadTicketSettings,
     getHighestTicketNumber,
+    updateLiveTicketPanels,
     DEFAULT_TICKET_SETTINGS
 };
