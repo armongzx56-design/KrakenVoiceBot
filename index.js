@@ -311,7 +311,6 @@ const commands = [
         .addStringOption(o => o.setName("features").setDescription("สิ่งที่เพิ่มเข้ามาใหม่ (ใช้ \\n เพื่อขึ้นบรรทัดใหม่)").setRequired(true))
         .addStringOption(o => o.setName("fixes").setDescription("สิ่งที่แก้ไข / ปรับปรุง (ใช้ \\n เพื่อขึ้นบรรทัดใหม่)").setRequired(false))
         .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งประกาศ (ถ้าไม่เลือกจะส่งห้องปัจจุบัน)").addChannelTypes(ChannelType.GuildText).setRequired(false))
-        .addStringOption(o => o.setName("loader").setDescription("โค้ดสคริปต์ Loader (ถ้าไม่ระบุจะใช้ตัวหลักของ KrakenHub)").setRequired(false))
         .addStringOption(o => o.setName("ping").setDescription("เลือกแท็กแจ้งเตือน").setRequired(false)
             .addChoices(
                 { name: "🔕 ไม่แท็ก (None)", value: "none" },
@@ -1093,33 +1092,6 @@ client.on("interactionCreate", async interaction => {
             return setTimeout(() => interaction.channel?.delete().catch(error => console.log("[TICKET CLOSE ERROR]", error.message)), 5000);
         }
 
-        if (interaction.customId === "btn_copy_loader") {
-            const defaultLoader = 'loadstring(game:HttpGet("https://tinyurl.com/KrakenHubV2"))()';
-            const wlConfig = config[interaction.guildId]?.whitelist;
-            const loaderCode = config[interaction.guildId]?.lastScriptLoader || wlConfig?.scriptLoader || defaultLoader;
-            return interaction.reply({
-                content: `📥 **คัดลอกโค้ดสคริปต์ KrakenHub Loader ด้านล่างไปรันได้เลย:**\n\`\`\`lua\n${loaderCode}\n\`\`\``,
-                ephemeral: true
-            });
-        }
-
-        if (interaction.customId === "btn_check_my_key") {
-            const userId = interaction.user.id;
-            const userWhitelists = config[interaction.guildId]?.whitelist?.users || {};
-            const userKeyInfo = userWhitelists[userId];
-            if (userKeyInfo && userKeyInfo.key) {
-                const expiresAt = userKeyInfo.expiresAt ? new Date(userKeyInfo.expiresAt).toLocaleDateString("th-TH") : "ถาวร (Lifetime)";
-                return interaction.reply({
-                    content: `🔑 **ข้อมูลคีย์ KrakenHub ของคุณ:**\n• **รหัสคีย์:** \`${userKeyInfo.key}\`\n• **วันหมดอายุ:** ${expiresAt}\n• **สถานะ:** 🟢 พร้อมใช้งานในระบบ`,
-                    ephemeral: true
-                });
-            } else {
-                return interaction.reply({
-                    content: `⚠️ **คุณยังไม่มีคีย์ในระบบ หรือยังไม่ได้รีดึมคีย์**\nกรุณารีดึมคีย์ที่ได้รับจากร้านค้าในห้อง Whitelist หรือเปิด Ticket เพื่อติดต่อสอบถามทีมงานครับ`,
-                    ephemeral: true
-                });
-            }
-        }
         return;
     }
     if (!interaction.isChatInputCommand()) return;
@@ -1282,16 +1254,7 @@ client.on("interactionCreate", async interaction => {
         const fixesRaw = interaction.options.getString("fixes");
         const targetChannel = interaction.options.getChannel("channel") || interaction.channel;
         const pingType = interaction.options.getString("ping") || "none";
-        const customLoader = interaction.options.getString("loader");
         const customImage = interaction.options.getString("image");
-
-        const defaultLoader = 'loadstring(game:HttpGet("https://tinyurl.com/KrakenHubV2"))()';
-        const loaderCode = customLoader || config[interaction.guildId]?.whitelist?.scriptLoader || defaultLoader;
-        if (customLoader) {
-            config[interaction.guildId] ??= {};
-            config[interaction.guildId].lastScriptLoader = customLoader;
-            saveConfig(config);
-        }
 
         // ฟอร์แมตรายการ Features & Fixes ด้วย Discord ANSI Highlight ให้สีตรงกับดีไซน์
         const ESC = "\u001b";
@@ -1339,17 +1302,6 @@ client.on("interactionCreate", async interaction => {
             text: `KrakenHub Multi-Game System • อัปเดตโดย ${interaction.user.tag}`
         }).setTimestamp();
 
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId("btn_copy_loader")
-                .setLabel("📥 ก็อปปี้โค้ด Loader")
-                .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId("btn_check_my_key")
-                .setLabel("🔑 เช็คคีย์ของฉัน")
-                .setStyle(ButtonStyle.Secondary)
-        );
-
         let pingContent = null;
         if (pingType === "here") pingContent = "@here";
         else if (pingType === "everyone") pingContent = "@everyone";
@@ -1357,8 +1309,7 @@ client.on("interactionCreate", async interaction => {
         try {
             await targetChannel.send({
                 content: pingContent,
-                embeds: [embed],
-                components: [row]
+                embeds: [embed]
             });
 
             return interaction.reply({
