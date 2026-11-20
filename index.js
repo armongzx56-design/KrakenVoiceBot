@@ -76,7 +76,6 @@ const CONFIG_FILE = path.join(DATA_DIR, "config.json");
 const AUTOPOST_FILE = path.join(DATA_DIR, "autopost_settings.json");
 const VOICE_FILE = path.join(DATA_DIR, "voice_settings.json");
 const STATUS_FILE = path.join(DATA_DIR, "status_settings.json");
-const YOUTUBE_FILE = path.join(DATA_DIR, "youtube_settings.json");
 const ROBLOX_FILE = path.join(DATA_DIR, "roblox_settings.json");
 const SECURITY_FILE = path.join(DATA_DIR, "security_settings.json");
 const TICKET_FILE = path.join(DATA_DIR, "ticket_settings.json");
@@ -109,7 +108,6 @@ function loadConfig() {
     const autoposts = safeReadJSON(AUTOPOST_FILE, {});
     const voices = safeReadJSON(VOICE_FILE, {});
     const statuses = safeReadJSON(STATUS_FILE, {});
-    const youtubes = safeReadJSON(YOUTUBE_FILE, {});
     const robloxes = safeReadJSON(ROBLOX_FILE, {});
     const securities = safeReadJSON(SECURITY_FILE, {});
     const tickets = safeReadJSON(TICKET_FILE, {});
@@ -119,7 +117,6 @@ function loadConfig() {
         ...Object.keys(autoposts),
         ...Object.keys(voices),
         ...Object.keys(statuses),
-        ...Object.keys(youtubes),
         ...Object.keys(robloxes),
         ...Object.keys(securities),
         ...Object.keys(tickets)
@@ -130,7 +127,6 @@ function loadConfig() {
         if (autoposts[gid]) main[gid].autopost = { ...(main[gid].autopost || {}), ...autoposts[gid] };
         if (voices[gid]) main[gid].voice247 = { ...(main[gid].voice247 || {}), ...voices[gid] };
         if (statuses[gid]) main[gid].status = { ...(main[gid].status || {}), ...statuses[gid] };
-        if (youtubes[gid]) main[gid].youtube = { ...(main[gid].youtube || {}), ...youtubes[gid] };
         if (robloxes[gid]) main[gid].roblox = { ...(main[gid].roblox || {}), ...robloxes[gid] };
         if (securities[gid]) main[gid].security = { ...(main[gid].security || {}), ...securities[gid] };
         if (tickets[gid]) main[gid].ticket = { ...(main[gid].ticket || {}), ...tickets[gid] };
@@ -145,7 +141,6 @@ function saveConfig(c) {
         const autoposts = safeReadJSON(AUTOPOST_FILE, {});
         const voices = safeReadJSON(VOICE_FILE, {});
         const statuses = safeReadJSON(STATUS_FILE, {});
-        const youtubes = safeReadJSON(YOUTUBE_FILE, {});
         const robloxes = safeReadJSON(ROBLOX_FILE, {});
         const securities = safeReadJSON(SECURITY_FILE, {});
         const tickets = safeReadJSON(TICKET_FILE, {});
@@ -154,7 +149,6 @@ function saveConfig(c) {
             if (gdata.autopost) autoposts[gid] = gdata.autopost;
             if (gdata.voice247) voices[gid] = gdata.voice247;
             if (gdata.status) statuses[gid] = gdata.status;
-            if (gdata.youtube) youtubes[gid] = gdata.youtube;
             if (gdata.roblox) robloxes[gid] = gdata.roblox;
             if (gdata.security) securities[gid] = gdata.security;
             if (gdata.ticket) tickets[gid] = { ...(tickets[gid] || {}), ...gdata.ticket };
@@ -163,7 +157,6 @@ function saveConfig(c) {
         safeWriteJSON(AUTOPOST_FILE, autoposts);
         safeWriteJSON(VOICE_FILE, voices);
         safeWriteJSON(STATUS_FILE, statuses);
-        safeWriteJSON(YOUTUBE_FILE, youtubes);
         safeWriteJSON(ROBLOX_FILE, robloxes);
         safeWriteJSON(SECURITY_FILE, securities);
         safeWriteJSON(TICKET_FILE, tickets);
@@ -223,16 +216,6 @@ const commands = [
     new SlashCommandBuilder()
         .setName("247").setDescription("[ 🎧 ] ให้บอทอยู่ในห้องเสียง 24/7")
         .addChannelOption(o => o.setName("channel").setDescription("เลือกห้องเสียงที่ให้บอทเข้า").addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice).setRequired(true)),
-    new SlashCommandBuilder()
-        .setName("youtube").setDescription("[ 🔴 ] ระบบแจ้งเตือนคลิปใหม่จาก YouTube")
-        .addSubcommand(sub => sub.setName("setup").setDescription("[ ⚙️ ] ตั้งห้องแจ้งเตือน YouTube")
-            .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะรับแจ้งเตือน").addChannelTypes(ChannelType.GuildText).setRequired(true)))
-        .addSubcommand(sub => sub.setName("add").setDescription("[ ➕ ] เพิ่มช่อง YouTube ที่ต้องการติดตาม")
-            .addStringOption(o => o.setName("channel_id").setDescription("YouTube Channel ID (ขึ้นต้นด้วย UC)").setRequired(true)))
-        .addSubcommand(sub => sub.setName("remove").setDescription("[ ➖ ] เลิกติดตามช่อง YouTube")
-            .addStringOption(o => o.setName("channel_id").setDescription("YouTube Channel ID ที่ต้องการลบ").setRequired(true)))
-        .addSubcommand(sub => sub.setName("list").setDescription("[ 📜 ] ดูช่อง YouTube ที่ติดตาม"))
-        .addSubcommand(sub => sub.setName("test").setDescription("[ 🧪 ] ทดสอบการแจ้งเตือน YouTube")),
     new SlashCommandBuilder()
         .setName("roblox").setDescription("[ 🤖 ] ระบบแจ้งเตือนเวอร์ชัน Roblox & เช็กสถานะตัวรัน")
         .addSubcommand(s => s.setName("setup").setDescription("[ ⚙️ ] ตั้งห้องแจ้งเตือนเวอร์ชันใหม่")
@@ -336,7 +319,10 @@ const commands = [
                 { name: "📢 แท็ก @everyone", value: "everyone" }
             ))
         .addStringOption(o => o.setName("image").setDescription("ลิงก์รูปภาพ Banner ใน Embed (ถ้ามี)").setRequired(false)),
-].map(command => command.toJSON());
+].map(command => {
+    command.setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator);
+    return command.toJSON();
+});
 // ==================== SERVER WHITELIST ====================
 function getAllowedGuildIds() {
     const configured = (process.env.ALLOWED_GUILDS || process.env.GUILD_ID || "")
@@ -862,7 +848,6 @@ client.once("clientReady", async () => {
     startConfiguredAutoPosts();
 
     startRobloxUpdates(client, config, saveConfig);
-    startYouTubeNotifications(client, config, saveConfig);
     startSecurity(client, config, saveConfig);
     startVerify(client, config, saveConfig);
     startVrBadge(client, config, saveConfig);
@@ -1751,63 +1736,6 @@ client.on("interactionCreate", async interaction => {
         return;
     }
 
-    if (interaction.commandName === "youtube") {
-        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-            return interaction.reply({ content: "❌ ต้องมีสิทธิ์ Manage Server", ephemeral: true });
-        }
-        const sub = interaction.options.getSubcommand();
-        const guildId = interaction.guildId;
-        config[guildId] ??= {};
-        config[guildId].youtube ??= { enabled: true, sources: [] };
-        const settings = config[guildId].youtube;
-
-        if (sub === "setup") {
-            const channel = interaction.options.getChannel("channel", true);
-            settings.channelId = channel.id;
-            settings.enabled = true;
-            settings.sources ??= [];
-            saveConfig(config);
-            return interaction.reply({ content: "✅ ตั้งห้องแจ้งเตือน YouTube เป็น " + channel, ephemeral: true });
-        }
-
-        if (sub === "add") {
-            const channelId = interaction.options.getString("channel_id", true).trim();
-            await interaction.deferReply({ ephemeral: true });
-            try {
-                const video = await addYouTubeSource(config, guildId, channelId);
-                saveConfig(config);
-                return interaction.editReply("✅ เพิ่มช่อง **" + video.author + "** เรียบร้อยแล้ว\nระบบจะตรวจคลิปใหม่ทุก 2 นาที");
-            } catch (error) {
-                return interaction.editReply("❌ เพิ่มช่องไม่สำเร็จ: " + error.message);
-            }
-        }
-
-        if (sub === "remove") {
-            const channelId = interaction.options.getString("channel_id", true).trim();
-            const removed = removeYouTubeSource(config, guildId, channelId);
-            if (!removed) return interaction.reply({ content: "❌ ไม่พบ Channel ID นี้ในรายการติดตาม", ephemeral: true });
-            saveConfig(config);
-            return interaction.reply({ content: "✅ ลบช่อง YouTube ออกจากรายการติดตามแล้ว", ephemeral: true });
-        }
-
-        if (sub === "list") {
-            const sources = settings.sources || [];
-            const list = sources.length
-                ? sources.map((source, index) => (index + 1) + ". **" + (source.channelName || "YouTube Channel") + "** — \`" + source.channelId + "\`").join("\n")
-                : "ยังไม่มีช่อง YouTube ที่ติดตาม";
-            return interaction.reply({ content: "📺 **ช่อง YouTube ที่ติดตาม**\n" + list + (settings.channelId ? "\n\n🔔 ห้องแจ้งเตือน: <#" + settings.channelId + ">" : "\n\n⚠️ ยังไม่ได้ตั้งห้อง ใช้ /youtube setup"), ephemeral: true });
-        }
-
-        if (sub === "test") {
-            await interaction.deferReply({ ephemeral: true });
-            try {
-                await sendYouTubeTest(client, config, guildId);
-                return interaction.editReply("✅ ส่งข้อความทดสอบไปยังห้องแจ้งเตือน YouTube แล้ว");
-            } catch (error) {
-                return interaction.editReply("❌ ทดสอบไม่สำเร็จ: " + error.message);
-            }
-        }
-    }
 
     if (interaction.commandName === "roblox") {
         if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
@@ -2181,7 +2109,6 @@ process.on("uncaughtException", error => {
 const { startSecurity, moderate, sendLog, settingsFor } = require("./systems/security");
 const { startDashboard } = require("./web/dashboard");
 const { startRobloxUpdates, sendTestUpdate, fetchRobloxVersions, fetchExploitStatuses, makeVersionEmbed, makeExecutorsEmbed, makeExecutorActionRow } = require("./systems/robloxUpdates");
-const { addSource: addYouTubeSource, removeSource: removeYouTubeSource, sendTestUpdate: sendYouTubeTest, startYouTubeNotifications } = require("./systems/youtubeNotifications");
 startDashboard({ client, config, saveConfig, formatUptime });
 
 client.login(process.env.BOT_TOKEN);
