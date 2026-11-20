@@ -624,27 +624,57 @@ function startAutoPost(guildId) {
 
     const intervalMinutes = Math.min(10080, Math.max(1, Number(setting.intervalMinutes) || 60));
     const intervalMs = intervalMinutes * 60 * 1000;
-    const lastSentAt = Number(setting.lastSentAt || 0);
 
-    // ตรวจสอบเวลาเมื่อบอทสตาร์ท
-    if (lastSentAt === 0) {
-        // ไม่เคยส่งเลย -> ส่งรอบแรกทันทีหลังออนไลน์ 3 วินาที
-        setTimeout(() => {
-            executeAutoPost(guildId, true).catch(() => {});
-        }, 3000);
-    } else {
-        const elapsed = Date.now() - lastSentAt;
-        if (elapsed >= intervalMs) {
-            // เลยกำหนดส่งไประหว่างบอทออฟไลน์ -> ส่งรอบตกค้าง
-            setTimeout(() => {
-                executeAutoPost(guildId).catch(() => {});
-            }, 3000);
-        } else {
-            // ยังไม่ถึงรอบเวลา -> ห้ามส่งซ้ำ ให้รอจนกว่าจะครบกำหนด
-            const remainingMinutes = Math.ceil((intervalMs - elapsed) / 60000);
-            console.log(`[AUTOPOST] Guild ${guildId} next post scheduled in ${remainingMinutes}m (last sent ${Math.round(elapsed / 60000)}m ago)`);
+    // ตรวจสอบประวัติข้อความจริงในห้องเมื่อบ็อตเริ่มทำงาน ป้องกันการส่งซ้ำตอนรีสตาร์ตบ็อต
+    (async () => {
+        try {
+            const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+            if (!guild) return;
+            const channel = guild.channels.cache.get(setting.channelId) || await guild.channels.fetch(setting.channelId).catch(() => null);
+            if (!channel || !channel.isTextBased()) return;
+
+            // ดึงข้อความล่าสุดในห้องเพื่อเช็คว่าเพิ่งส่งไปหรือไม่
+            const recentMessages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
+            if (recentMessages && recentMessages.size > 0) {
+                // หาข้อความล่าสุดที่ส่งโดยบ็อตตัวเอง หรือส่งผ่าน Webhook หรือมีเนื้อหาตรงกับ message
+                const lastMsg = recentMessages.find(m => 
+                    m.author?.id === client.user?.id || 
+                    m.webhookId || 
+                    (setting.message && m.content && m.content.includes(setting.message.slice(0, 30)))
+                );
+
+                if (lastMsg) {
+                    const msgTime = lastMsg.createdTimestamp;
+                    const elapsed = Date.now() - msgTime;
+                    if (elapsed < intervalMs) {
+                        // ยังไม่ครบ 2 ชม. (intervalMs) ห้ามส่งซ้ำเด็ดขาดเมื่อรีสตาร์ตบ็อต
+                        setting.lastSentAt = msgTime;
+                        saveConfig(config);
+                        const waitMin = Math.ceil((intervalMs - elapsed) / 60000);
+                        console.log(`[AUTOPOST] Guild ${guildId}: Found recent post in #${channel.name} (${Math.round(elapsed / 60000)}m ago). No duplicate send on reboot. Next in ${waitMin}m`);
+                        return;
+                    }
+                }
+            }
+
+            // ถ้าตรวจสอบจากห้องแล้วไม่พบ หรือเวลาที่จำไว้ยังไม่ครบกำหนด
+            const lastSentAt = Number(setting.lastSentAt || 0);
+            if (lastSentAt > 0) {
+                const elapsed = Date.now() - lastSentAt;
+                if (elapsed < intervalMs) {
+                    const remainingMinutes = Math.ceil((intervalMs - elapsed) / 60000);
+                    console.log(`[AUTOPOST] Guild ${guildId} next post scheduled in ${remainingMinutes}m (last sent ${Math.round(elapsed / 60000)}m ago). No duplicate send on reboot.`);
+                    return;
+                }
+            }
+
+            // ถ้าไม่เคยส่งเลย และในห้องไม่มีข้อความเดิมเลย จึงส่งรอบแรก
+            console.log(`[AUTOPOST] Guild ${guildId}: No recent post found in channel, executing initial auto-post`);
+            await executeAutoPost(guildId);
+        } catch (err) {
+            console.error(`[AUTOPOST STARTUP CHECK ERR ${guildId}]`, err.message);
         }
-    }
+    })();
 
     // ลูปตรวจสอบทุก 15 วินาที
     const timer = setInterval(() => {
