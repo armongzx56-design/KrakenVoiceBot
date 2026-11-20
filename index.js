@@ -1259,37 +1259,42 @@ client.on("interactionCreate", async interaction => {
         const pingType = interaction.options.getString("ping") || "none";
         const customImage = interaction.options.getString("image");
 
-        // ค้นหาอีโมจิเคลื่อนไหวสำหรับหัวข้ออัปเดต
-        let updateEmoji = customEmoji ? resolveMessageEmojisAndFormatting(customEmoji, interaction.guild) : null;
-        if (!updateEmoji && interaction.guild) {
+        // ค้นหาอีโมจิเคลื่อนไหวสำหรับหัวข้อต่างๆ
+        let guildAnimated = [];
+        if (interaction.guild) {
             try {
                 const guildEmojis = await interaction.guild.emojis.fetch();
-                const animated = guildEmojis.filter(e => e.animated);
-                const best = animated.find(e => /update|rocket|announc|bell|fire|siren|spark|star|game|nitro|312312/i.test(e.name))
-                    || animated.first();
-                if (best) updateEmoji = `<a:${best.name}:${best.id}>`;
+                guildAnimated = Array.from(guildEmojis.filter(e => e.animated).values());
             } catch {}
         }
+        const appAnimated = client.application?.emojis?.cache
+            ? Array.from(client.application.emojis.cache.filter(e => e.animated).values())
+            : [];
+        const allAnimated = [...guildAnimated, ...appAnimated];
 
-        if (!updateEmoji && client.application?.emojis?.cache) {
-            const appAnimated = client.application.emojis.cache.filter(e => e.animated);
-            const best = appAnimated.find(e => /rocket|update|tada|fire|spark|star|money|kitty/i.test(e.name))
-                || appAnimated.first();
-            if (best) updateEmoji = `<a:${best.name}:${best.id}>`;
-        }
+        const findEmoji = (keywords, fallback) => {
+            for (const kw of keywords) {
+                const found = allAnimated.find(e => e.name.toLowerCase().includes(kw.toLowerCase()));
+                if (found) return `<a:${found.name}:${found.id}>`;
+            }
+            return fallback;
+        };
 
+        let updateEmoji = customEmoji ? resolveMessageEmojisAndFormatting(customEmoji, interaction.guild) : null;
         if (!updateEmoji) {
-            updateEmoji = "<a:312312:1570844178684846211>";
+            updateEmoji = findEmoji(["update", "rocket", "announc", "bell", "fire", "siren", "spark", "star", "game", "nitro", "312312"], "<a:312312:1570844178684846211>");
         }
+
+        const featureEmoji = findEmoji(["sparkle", "star", "shine", "new", "diamond", "fire", "tadapurple", "tada", "plus"], "<a:2659tadapurple:1569102206798397571>");
+        const fixEmoji = findEmoji(["wrench", "tool", "gear", "fix", "hammer", "setting", "bug", "pinkarrow", "arrow"], "<a:998057pinkarrow:1569102319105089637>");
 
         // ฟอร์แมตรายการ Features & Fixes ด้วย Discord ANSI Highlight ให้สีตรงกับดีไซน์
         const ESC = "\u001b";
         const ANSI_RESET = `${ESC}[0m`;
         const ANSI_GREEN = `${ESC}[1;32m`;
         const ANSI_YELLOW = `${ESC}[1;33m`;
-        const ANSI_WHITE = `${ESC}[0;37m`;
 
-        const formatAnsiList = text => {
+        const formatAnsiList = (text, colorCode) => {
             if (!text) return "";
             return text
                 .split(/\\n|\n/)
@@ -1297,18 +1302,18 @@ client.on("interactionCreate", async interaction => {
                 .filter(Boolean)
                 .map(line => {
                     const clean = line.replace(/^[•\-\*]\s*/, "");
-                    return `${ANSI_WHITE}• ${clean}${ANSI_RESET}`;
+                    return `${colorCode}• ${clean}${ANSI_RESET}`;
                 })
                 .join("\n");
         };
 
-        const formattedFeatures = formatAnsiList(featuresRaw);
-        const formattedFixes = fixesRaw ? formatAnsiList(fixesRaw) : null;
+        const formattedFeatures = formatAnsiList(featuresRaw, ANSI_GREEN);
+        const formattedFixes = fixesRaw ? formatAnsiList(fixesRaw, ANSI_YELLOW) : null;
 
-        let description = `\`\`\`ansi\n${ANSI_GREEN}✨ สิ่งที่เพิ่มเข้ามาใหม่ (New Features):${ANSI_RESET}\n${formattedFeatures}\n\`\`\``;
+        let description = `${featureEmoji} **สิ่งที่เพิ่มเข้ามาใหม่ (New Features):**\n\`\`\`ansi\n${formattedFeatures}\n\`\`\``;
 
         if (formattedFixes) {
-            description += `\n\`\`\`ansi\n${ANSI_YELLOW}🔧 การแก้ไขบั๊ก (Bug Fixes):${ANSI_RESET}\n${formattedFixes}\n\`\`\``;
+            description += `\n${fixEmoji} **การแก้ไขบั๊ก (Bug Fixes):**\n\`\`\`ansi\n${formattedFixes}\n\`\`\``;
         }
 
         const cleanVer = (version.startsWith("v") || version.startsWith("V") ? version : `v${version}`)
