@@ -209,15 +209,15 @@ function makeHubPanel(maps = null) {
 
     const hubImagePath = path.join(ASSETS_DIR, "krakenhub_hub.jpg");
     const files = [];
-    if (fs.existsSync(hubImagePath)) {
-        files.push(new AttachmentBuilder(hubImagePath, { name: "hub.jpg" }));
-    }
-
     const embed = new EmbedBuilder()
         .setColor(0xED4245) // ขอบ Embed สีแดง
         .setTitle("🔴 KRAKEN HUB | SCRIPT COLLECTION")
-        .setDescription("กรุณาเลื่อนเลือกแมพที่ต้องการรับสคริปต์ด้านล่างนี้:")
-        .setImage("attachment://hub.jpg");
+        .setDescription("กรุณาเลื่อนเลือกแมพที่ต้องการรับสคริปต์ด้านล่างนี้:");
+
+    if (fs.existsSync(hubImagePath)) {
+        files.push(new AttachmentBuilder(hubImagePath, { name: "hub.jpg" }));
+        embed.setImage("attachment://hub.jpg");
+    }
 
     return {
         embeds: [embed],
@@ -254,24 +254,24 @@ function makeMapDeliveryPanel(mapId, showBackBtn = true) {
 
     const row = new ActionRowBuilder().addComponents(buttons);
 
-    const files = [];
-    if (map.imagePath && fs.existsSync(map.imagePath)) {
-        files.push(new AttachmentBuilder(map.imagePath, { name: "cover.jpg" }));
-    } else {
-        const defaultCover = path.join(ASSETS_DIR, "mahanakhon_cover.jpg");
-        if (fs.existsSync(defaultCover)) {
-            files.push(new AttachmentBuilder(defaultCover, { name: "cover.jpg" }));
-        }
-    }
-
     const embed = new EmbedBuilder()
         .setColor(0xED4245) // ขอบ Embed สีแดง
         .setTitle(map.title || `แมพ ${map.name || map.id}`);
 
-    if (map.imageUrl) {
-        embed.setImage(map.imageUrl);
-    } else if (files.length > 0) {
+    const files = [];
+
+    // ป้องกันรูปภาพขึ้นซ้ำซ้อน 2 รูป (ให้รูปไปอยู่ใน Embed เท่านั้น ไม่โชว์ไฟล์แนบลอยด้านบน)
+    if (map.imagePath && fs.existsSync(map.imagePath)) {
+        files.push(new AttachmentBuilder(map.imagePath, { name: "cover.jpg" }));
         embed.setImage("attachment://cover.jpg");
+    } else if (map.imageUrl) {
+        embed.setImage(map.imageUrl);
+    } else {
+        const defaultCover = path.join(ASSETS_DIR, "mahanakhon_cover.jpg");
+        if (fs.existsSync(defaultCover)) {
+            files.push(new AttachmentBuilder(defaultCover, { name: "cover.jpg" }));
+            embed.setImage("attachment://cover.jpg");
+        }
     }
 
     return {
@@ -399,6 +399,7 @@ async function handleScriptHubInteraction(interaction) {
             return interaction.update({
                 embeds: panel.embeds,
                 files: panel.files,
+                attachments: [],
                 components: panel.components
             }).catch(err => console.error("[SCRIPTHUB EPHEMERAL UPDATE ERR]", err.message));
         }
@@ -433,6 +434,7 @@ async function handleScriptHubInteraction(interaction) {
         return interaction.update({
             embeds: hubPanel.embeds,
             files: hubPanel.files,
+            attachments: [],
             components: hubPanel.components
         }).catch(err => console.error("[SCRIPTHUB RESET MENU ERR]", err.message));
     }
@@ -459,6 +461,7 @@ async function handleScriptHubInteraction(interaction) {
         return interaction.update({
             embeds: hubPanel.embeds,
             files: hubPanel.files,
+            attachments: [],
             components: hubPanel.components
         }).catch(err => console.error("[SCRIPTHUB BACK ERR]", err.message));
     }
@@ -873,7 +876,7 @@ async function handleScriptHubCommand(interaction) {
             const ok = await downloadAndSaveImage(imgAttachment.url, destPath);
             if (ok) {
                 maps[mapId].imagePath = destPath;
-                maps[mapId].imageUrl = imgAttachment.url;
+                maps[mapId].imageUrl = null; // ป้องกัน URL ซ้อนกับไฟล์แนบจนเกิดรูปเบิ้ล 2 อัน
                 changes.push("• อัปเดตรูปภาพปกใหม่ (จากไฟล์แนบ)");
             }
         } else if (imgUrl) {
@@ -881,8 +884,11 @@ async function handleScriptHubCommand(interaction) {
             const ok = await downloadAndSaveImage(imgUrl, destPath);
             if (ok) {
                 maps[mapId].imagePath = destPath;
-                maps[mapId].imageUrl = imgUrl;
+                maps[mapId].imageUrl = null;
                 changes.push("• อัปเดตรูปภาพปกใหม่ (จาก URL)");
+            } else {
+                maps[mapId].imageUrl = imgUrl;
+                changes.push("• ตั้งค่า URL รูปภาพปก");
             }
         }
 
@@ -927,7 +933,7 @@ async function handleScriptHubCommand(interaction) {
             emoji,
             description,
             imagePath,
-            imageUrl: imgUrl || imgAttachment?.url || null,
+            imageUrl: (imagePath && fs.existsSync(imagePath)) ? null : (imgUrl || imgAttachment?.url || null),
             script
         };
         saveMaps(maps);
