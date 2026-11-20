@@ -717,6 +717,8 @@ function startDashboard({ client, config, saveConfig, formatUptime }) {
                             channelId: channel.id,
                             channelName: channel.name,
                             messageId: m.id,
+                            title: m.embeds?.[0]?.title,
+                            description: m.embeds?.[0]?.description,
                             components: m.components.map(r => r.components.map(c => ({
                                 customId: c.customId,
                                 label: c.label,

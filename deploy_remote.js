@@ -47,11 +47,15 @@ const LOCAL_ROOT = __dirname;
 
 function uploadFile(sftp, localPath, remotePath) {
     return new Promise((resolve, reject) => {
-        sftp.fastPut(localPath, remotePath, err => {
-            if (err) return reject(err);
+        const rs = fs.createReadStream(localPath);
+        const ws = sftp.createWriteStream(remotePath, { flags: "w" });
+        ws.on("close", () => {
             console.log(`  [UPLOADED] ${path.relative(LOCAL_ROOT, localPath)} -> ${remotePath}`);
             resolve();
         });
+        ws.on("error", err => reject(err));
+        rs.on("error", err => reject(err));
+        rs.pipe(ws);
     });
 }
 
