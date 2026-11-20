@@ -311,7 +311,7 @@ function makeMapDeliveryPanel(mapId, showBackBtn = true) {
         buttons.push(
             new ButtonBuilder()
                 .setCustomId("scripthub_back_to_hub")
-                .setLabel("ย้อนกลับ / เลือกแมพอื่น")
+                .setLabel("ย้อนกลับ (ปิดหน้านี้)")
                 .setEmoji(ANIMATED.arrow)
                 .setStyle(ButtonStyle.Secondary)
         );
@@ -526,16 +526,21 @@ async function handleScriptHubInteraction(interaction) {
         });
     }
 
-    // 5.3 สมาชิกกดปุ่ม "ย้อนกลับ / เลือกแมพอื่น" (จากหน้ารับสคริปต์ Ephemeral)
+    // 5.3 สมาชิกกดปุ่ม "ย้อนกลับ (ปิดหน้านี้)" -> ลบ/ปิดหน้ารับสคริปต์ทันที เพื่อให้เหลือเมนูหลักในห้องเพียงอันเดียว
     if (interaction.isButton() && interaction.customId === "scripthub_back_to_hub") {
-        const hubPanel = makeHubPanel();
-        return interaction.update({
-            content: null,
-            embeds: hubPanel.embeds,
-            files: hubPanel.files,
-            attachments: [],
-            components: hubPanel.components
-        }).catch(err => console.error("[SCRIPTHUB BACK ERR]", err.message));
+        try {
+            await interaction.deleteReply();
+        } catch (err) {
+            // กรณี deleteReply ติดปัญหาให้ update เคลียร์หน้าจอออก
+            return interaction.update({
+                content: `✅ ปิดหน้ารับสคริปต์เรียบร้อย (สามารถเลือกแมพใหม่จากแผงหลักด้านบนได้ทันที)`,
+                embeds: [],
+                files: [],
+                attachments: [],
+                components: []
+            }).catch(() => {});
+        }
+        return;
     }
 
     // ==================== ADMIN ACTIONS ====================
