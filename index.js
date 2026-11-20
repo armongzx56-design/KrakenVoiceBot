@@ -87,6 +87,37 @@ try {
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
+// ==================== AUTO REBOOT / DEPLOY TRIGGER ====================
+const REBOOT_TRIGGER_FILE = path.join(DATA_DIR, ".reboot");
+try {
+    let isRebooting = false;
+    const triggerReboot = reason => {
+        if (isRebooting) return;
+        isRebooting = true;
+        console.log(`[REBOOT TRIGGER] ${reason}. Exiting process to let host daemon restart bot...`);
+        try {
+            if (fs.existsSync(REBOOT_TRIGGER_FILE)) fs.unlinkSync(REBOOT_TRIGGER_FILE);
+        } catch (_) {}
+        setTimeout(() => {
+            process.exit(0);
+        }, 1000);
+    };
+
+    fs.watch(DATA_DIR, (eventType, filename) => {
+        if (filename === ".reboot" && fs.existsSync(REBOOT_TRIGGER_FILE)) {
+            triggerReboot("Detected .reboot file creation/update via SFTP deploy");
+        }
+    });
+
+    setInterval(() => {
+        if (fs.existsSync(REBOOT_TRIGGER_FILE)) {
+            triggerReboot("Detected .reboot trigger via polling");
+        }
+    }, 3000);
+} catch (err) {
+    console.error("[AUTO REBOOT WATCHER ERR]", err.message);
+}
+
 function safeReadJSON(filepath, def = {}) {
     try {
         if (fs.existsSync(filepath)) return JSON.parse(fs.readFileSync(filepath, "utf8"));
@@ -328,6 +359,9 @@ const commands = [
         .addStringOption(o => o.setName("image").setDescription("ลิงก์รูปภาพ Banner ใน Embed (ถ้ามี)").setRequired(false)),
     scripthubSlashCommand,
     supportedSlashCommand,
+    new SlashCommandBuilder()
+        .setName("reboot")
+        .setDescription("[ 🔄 ] รีสตาร์ทบอท KrakenHub ทันที (ดึงการเปลี่ยนแปลงล่าสุด)"),
 ].map(command => {
     command.setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator);
     return command.toJSON();
@@ -1181,6 +1215,21 @@ client.on("interactionCreate", async interaction => {
 
     if (interaction.commandName === "supported") {
         return handleSupportedCommand(interaction);
+    }
+
+    if (interaction.commandName === "reboot") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: "❌ เฉพาะผู้ดูแลระบบ (Administrator) เท่านั้นที่ใช้คำสั่งนี้ได้", ephemeral: true });
+        }
+        await interaction.reply({
+            content: `🔄 **กำลังรีสตาร์ทบอท KrakenHub...**\n*(ระบบจะเชื่อมต่อใหม่และซิงก์ข้อมูลอัตโนมัติภายในไม่กี่วินาที)*`,
+            ephemeral: true
+        });
+        setTimeout(() => {
+            console.log(`[ADMIN REBOOT] Initiated by ${interaction.user.tag} (${interaction.user.id})`);
+            process.exit(0);
+        }, 1500);
+        return;
     }
 
     if (interaction.commandName === "mod") {
