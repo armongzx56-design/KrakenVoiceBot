@@ -8,7 +8,10 @@ const {
     AttachmentBuilder,
     ChannelType,
     PermissionsBitField,
-    EmbedBuilder
+    EmbedBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
 } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
@@ -17,7 +20,6 @@ const DATA_DIR = path.join(__dirname, "..", "data");
 const ASSETS_DIR = path.join(__dirname, "..", "assets");
 const MAPS_FILE = path.join(DATA_DIR, "scripthub_maps.json");
 
-// ตรวจสอบและสร้างโฟลเดอร์ data
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ข้อมูลแมพเริ่มต้น
@@ -29,7 +31,6 @@ const DEFAULT_MAPS = {
         emoji: "🏎️",
         description: "สคริปต์แมพมหานคร เรซซิ่ง (ออโต้ฟาร์ม, จูนรถ, วาร์ปส่งของ)",
         imagePath: path.join(ASSETS_DIR, "mahanakhon_cover.jpg"),
-        imageUrl: null,
         script: 'loadstring(game:HttpGet("https://gist.githubusercontent.com/MacHub09/76ea573e3e472a8854d4f2dea5944d01/raw/c2175ee3808e846c9baa6c96c5e2a19a2b7e194b/Loaders"))()'
     },
     sailueat: {
@@ -39,7 +40,6 @@ const DEFAULT_MAPS = {
         emoji: "🥊",
         description: "สคริปต์แมพสายเลือดอาชีวะ (Aimbot, Hitbox, Silent Aim, Auto Farm)",
         imagePath: path.join(ASSETS_DIR, "krakenhub_hub.jpg"),
-        imageUrl: null,
         script: 'loadstring(game:HttpGet("https://raw.githubusercontent.com/KrakenHub/sailueat/main/loader.lua"))()'
     },
     voxel: {
@@ -49,7 +49,6 @@ const DEFAULT_MAPS = {
         emoji: "🔫",
         description: "สคริปต์แมพว็อกเซล วอร์ส (Silent Aim, ESP, God Mode)",
         imagePath: path.join(ASSETS_DIR, "krakenhub_hub.jpg"),
-        imageUrl: null,
         script: 'loadstring(game:HttpGet("https://raw.githubusercontent.com/KrakenHub/voxel/main/loader.lua"))()'
     }
 };
@@ -77,7 +76,7 @@ function saveMaps(maps) {
 }
 
 /**
- * 1. สร้างหน้าแรก: Kraken Hub Script Collection + Select Menu (รูปที่ 1)
+ * 1. แผงเลือกแมพหลัก: KRAKEN HUB SCRIPT COLLECTION + Dropdown Menu (รูปที่ 1)
  */
 function makeHubPanel(maps = null) {
     maps ??= loadMaps();
@@ -112,7 +111,7 @@ function makeHubPanel(maps = null) {
 }
 
 /**
- * 2. สร้างหน้ารับสคริปต์ของแต่ละแมพ: ข้อความตัวใหญ่ + ปกรูปเกม + ปุ่มคัดลอก (รูปที่ 2)
+ * 2. หน้ารับสคริปต์ของแต่ละแมพ: ข้อความตัวใหญ่ + ปกรูปเกม + ปุ่มคัดลอก (รูปที่ 2)
  */
 function makeMapDeliveryPanel(mapId, showBackBtn = true) {
     const maps = loadMaps();
@@ -157,10 +156,67 @@ function makeMapDeliveryPanel(mapId, showBackBtn = true) {
 }
 
 /**
- * 3. ตัวประมวลผล Interaction สำหรับ ScriptHub (Select Menu & Buttons)
+ * 3. แผงควบคุมระบบหลังบ้านแบบ All-in-One Dashboard
+ */
+function makeAdminDashboard(maps = null) {
+    maps ??= loadMaps();
+
+    const embed = new EmbedBuilder()
+        .setColor(0xED4245)
+        .setTitle("🏎️ KRAKENHUB | แผงควบคุมระบบแจกสคริปต์ (All-in-One)")
+        .setDescription(
+            "ศูนย์รวมคำสั่งและการจัดการสคริปต์ทั้งหมดในคำสั่งเดียว\n" +
+            "สามารถกดปุ่มด้านล่างเพื่อส่งแผงแจก หรือจัดการสคริปต์ได้ทันที:"
+        )
+        .setTimestamp();
+
+    for (const [id, m] of Object.entries(maps)) {
+        embed.addFields({
+            name: `${m.emoji || "🎮"} ${m.name} (\`ID: ${id}\`)`,
+            value: `• **หัวข้อ:** ${m.title || m.name}\n• **โค้ด:** \`${(m.script || "").slice(0, 85)}...\``,
+            inline: false
+        });
+    }
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("scripthub_admin_send_hub")
+            .setLabel("ส่งแผงเลือกแมพรวม (Hub)")
+            .setEmoji("📨")
+            .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+            .setCustomId("scripthub_admin_send_mhnk")
+            .setLabel("ส่งโพสต์แมพ Mahanakhon")
+            .setEmoji("🏎️")
+            .setStyle(ButtonStyle.Primary)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("scripthub_admin_open_add")
+            .setLabel("เพิ่มแมพใหม่")
+            .setEmoji("➕")
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId("scripthub_admin_open_edit")
+            .setLabel("แก้ไขสคริปต์")
+            .setEmoji("✏️")
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId("scripthub_admin_refresh")
+            .setLabel("รีเฟรช")
+            .setEmoji("🔄")
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    return { embeds: [embed], components: [row1, row2] };
+}
+
+/**
+ * 4. ตัวประมวลผล Interaction สำหรับ ScriptHub (Select Menu, Buttons & Modals)
  */
 async function handleScriptHubInteraction(interaction) {
-    // 3.1 ผู้ใช้เลือกแมพจาก Dropdown Menu -> เปลี่ยนหน้าจอเป็นรูปที่ 2
+    // 4.1 สมาชิกเลือกแมพจาก Dropdown Menu -> เปลี่ยนเป็นรูปที่ 2
     if (interaction.isStringSelectMenu() && interaction.customId === "scripthub_select_map") {
         const selectedId = interaction.values[0];
         const panel = makeMapDeliveryPanel(selectedId, true);
@@ -169,129 +225,264 @@ async function handleScriptHubInteraction(interaction) {
             return interaction.reply({ content: "❌ ไม่พบข้อมูลแมพที่เลือก", ephemeral: true });
         }
 
-        // อัปเดตข้อความเดิมให้กลายเป็นหน้ารับสคริปต์ของแมพนั้น
         return interaction.update({
             content: panel.content,
             files: panel.files,
             components: panel.components
-        }).catch(err => {
-            console.error("[SCRIPTHUB UPDATE ERR]", err.message);
-        });
+        }).catch(err => console.error("[SCRIPTHUB UPDATE ERR]", err.message));
     }
 
-    // 3.2 ผู้ใช้กดปุ่ม "คัดลอกสคริปต์"
+    // 4.2 สมาชิกกดปุ่ม "คัดลอกสคริปต์"
     if (interaction.isButton() && interaction.customId.startsWith("scripthub_copy_")) {
         const mapId = interaction.customId.replace("scripthub_copy_", "");
         const maps = loadMaps();
         const map = maps[mapId] || maps.mahanakhon;
 
         if (!map || !map.script) {
-            return interaction.reply({
-                content: "❌ ไม่พบโค้ดสคริปต์สำหรับแมพนี้ในระบบ",
-                ephemeral: true
-            });
+            return interaction.reply({ content: "❌ ไม่พบโค้ดสคริปต์ในระบบ", ephemeral: true });
         }
 
-        // ส่งโค้ดแบบ raw text ให้แตะ copy ง่ายสุดๆ ในมือถือและคอม
         return interaction.reply({
             content: map.script,
             ephemeral: true
         });
     }
 
-    // 3.3 ผู้ใช้กดปุ่ม "เลือกแมพอื่น" (ย้อนกลับหน้าแรก)
+    // 4.3 สมาชิกกดปุ่ม "เลือกแมพอื่น" (ย้อนกลับหน้าแรก)
     if (interaction.isButton() && interaction.customId === "scripthub_back_to_hub") {
         const hubPanel = makeHubPanel();
         return interaction.update({
             content: hubPanel.content,
             files: hubPanel.files,
             components: hubPanel.components
-        }).catch(err => {
-            console.error("[SCRIPTHUB BACK ERR]", err.message);
+        }).catch(err => console.error("[SCRIPTHUB BACK ERR]", err.message));
+    }
+
+    // ==================== ADMIN DASHBOARD ACTIONS ====================
+
+    // แอดมินกดส่งแผงเลือกแมพรวม
+    if (interaction.isButton() && interaction.customId === "scripthub_admin_send_hub") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: "❌ เฉพาะผู้ดูแลระบบเท่านั้น", ephemeral: true });
+        }
+        const hubPanel = makeHubPanel();
+        await interaction.channel.send({
+            content: hubPanel.content,
+            files: hubPanel.files,
+            components: hubPanel.components
+        });
+        return interaction.reply({ content: "✅ ส่งแผงเลือกแมพรวมลงในห้องนี้เรียบร้อยแล้ว!", ephemeral: true });
+    }
+
+    // แอดมินกดส่งโพสต์แมพ Mahanakhon ตรงๆ
+    if (interaction.isButton() && interaction.customId === "scripthub_admin_send_mhnk") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: "❌ เฉพาะผู้ดูแลระบบเท่านั้น", ephemeral: true });
+        }
+        const panel = makeMapDeliveryPanel("mahanakhon", false);
+        await interaction.channel.send({
+            content: panel.content,
+            files: panel.files,
+            components: panel.components
+        });
+        return interaction.reply({ content: "✅ ส่งโพสต์แจกสคริปต์แมพ MAHANAKHON RACING เรียบร้อยแล้ว!", ephemeral: true });
+    }
+
+    // แอดมินกดรีเฟรช Dashboard
+    if (interaction.isButton() && interaction.customId === "scripthub_admin_refresh") {
+        const dash = makeAdminDashboard();
+        return interaction.update({ embeds: dash.embeds, components: dash.components });
+    }
+
+    // แอดมินกดเปิด Modal เพิ่มแมพ
+    if (interaction.isButton() && interaction.customId === "scripthub_admin_open_add") {
+        const modal = new ModalBuilder()
+            .setCustomId("scripthub_modal_add")
+            .setTitle("➕ เพิ่มแมพแจกสคริปต์ใหม่");
+
+        const idInput = new TextInputBuilder()
+            .setCustomId("id_input")
+            .setLabel("รหัสย่อแมพ (ID ภาษาอังกฤษ เช่น bloxfruits):")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        const nameInput = new TextInputBuilder()
+            .setCustomId("name_input")
+            .setLabel("ชื่อแมพ (เช่น BLOX FRUITS):")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        const emojiInput = new TextInputBuilder()
+            .setCustomId("emoji_input")
+            .setLabel("อีโมจิประจำแมพ (เช่น 🍎 หรือ 🏎️):")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(false);
+
+        const scriptInput = new TextInputBuilder()
+            .setCustomId("script_input")
+            .setLabel("โค้ด loadstring ของแมพ:")
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(idInput),
+            new ActionRowBuilder().addComponents(nameInput),
+            new ActionRowBuilder().addComponents(emojiInput),
+            new ActionRowBuilder().addComponents(scriptInput)
+        );
+
+        return interaction.showModal(modal);
+    }
+
+    // แอดมินกดเปิด Modal แก้ไขสคริปต์
+    if (interaction.isButton() && interaction.customId === "scripthub_admin_open_edit") {
+        const modal = new ModalBuilder()
+            .setCustomId("scripthub_modal_edit")
+            .setTitle("✏️ แก้ไขโค้ดสคริปต์แมพ");
+
+        const mapInput = new TextInputBuilder()
+            .setCustomId("edit_map_id")
+            .setLabel("รหัสแมพที่จะแก้ไข (เช่น mahanakhon):")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        const scriptInput = new TextInputBuilder()
+            .setCustomId("edit_script_code")
+            .setLabel("โค้ด loadstring ใหม่:")
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(mapInput),
+            new ActionRowBuilder().addComponents(scriptInput)
+        );
+
+        return interaction.showModal(modal);
+    }
+
+    // เมื่อส่ง Modal เพิ่มแมพ
+    if (interaction.isModalSubmit() && interaction.customId === "scripthub_modal_add") {
+        const id = interaction.fields.getTextInputValue("id_input").toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
+        const name = interaction.fields.getTextInputValue("name_input").trim();
+        const emoji = interaction.fields.getTextInputValue("emoji_input")?.trim() || "🎮";
+        const script = interaction.fields.getTextInputValue("script_input").trim();
+
+        const maps = loadMaps();
+        maps[id] = {
+            id,
+            name,
+            title: `แมพ ${name}`,
+            emoji,
+            description: `สคริปต์สำหรับ ${name}`,
+            imagePath: path.join(ASSETS_DIR, "krakenhub_hub.jpg"),
+            script
+        };
+        saveMaps(maps);
+
+        return interaction.reply({
+            content: `✅ เพิ่มแมพ **${name}** (\`ID: ${id}\`) เรียบร้อยแล้ว!`,
+            ephemeral: true
+        });
+    }
+
+    // เมื่อส่ง Modal แก้ไขสคริปต์
+    if (interaction.isModalSubmit() && interaction.customId === "scripthub_modal_edit") {
+        const mapId = interaction.fields.getTextInputValue("edit_map_id").toLowerCase().trim();
+        const newCode = interaction.fields.getTextInputValue("edit_script_code").trim();
+
+        const maps = loadMaps();
+        if (!maps[mapId]) {
+            return interaction.reply({ content: `❌ ไม่พบแมพ \`${mapId}\` ในระบบ`, ephemeral: true });
+        }
+
+        maps[mapId].script = newCode;
+        saveMaps(maps);
+
+        return interaction.reply({
+            content: `✅ อัปเดตสคริปต์แมพ **${maps[mapId].name}** เรียบร้อยแล้ว!`,
+            ephemeral: true
         });
     }
 }
 
 /**
- * 4. นิยาม Slash Command หลังบ้าน (/scripthub) - รวมเหลือคำสั่ง setup ตัวเดียว
+ * 5. คำสั่ง Slash Command รวมเดี่ยวตัวเดียว: /scripthub
  */
 const scripthubSlashCommand = new SlashCommandBuilder()
     .setName("scripthub")
-    .setDescription("[ 🏎️ ] ระบบจัดการแผงเลือกแมพและแจกสคริปต์ KrakenHub")
-    .addSubcommand(sub =>
-        sub.setName("setup")
-            .setDescription("[ ⚙️ ] ตั้งค่าและส่งแผงแจกสคริปต์เข้าห้องที่เลือก")
-            .addChannelOption(o =>
-                o.setName("channel")
-                    .setDescription("ห้องที่จะส่งแผงแจกสคริปต์")
-                    .addChannelTypes(ChannelType.GuildText)
-                    .setRequired(true)
-            )
-            .addStringOption(o =>
-                o.setName("map")
-                    .setDescription("เลือกรูปแบบแผงแจก (ค่าเริ่มต้น: แผงเลือกแมพรวมทุกเกม)")
-                    .setRequired(false)
-                    .addChoices(
-                        { name: "🌐 แผงเลือกแมพรวม (Hub Selector - ปกแดง มีตัวเลื่อนเลือกแมพ)", value: "all" },
-                        { name: "🏎️ แมพ MAHANAKHON RACING (เฉพาะแมพนี้ตรงๆ)", value: "mahanakhon" },
-                        { name: "🥊 แมพ SAI LUEAT ARCHIWA (เฉพาะแมพนี้ตรงๆ)", value: "sailueat" },
-                        { name: "🔫 แมพ VOXEL WARS (เฉพาะแมพนี้ตรงๆ)", value: "voxel" }
-                    )
+    .setDescription("[ 🏎️ ] แผงควบคุมระบบแจกสคริปต์ KrakenHub (รวมทุกฟังก์ชันในคำสั่งเดียว)")
+    .addChannelOption(o =>
+        o.setName("channel")
+            .setDescription("เลือกห้องที่ต้องการส่งแผงแจกสคริปต์ (ถ้าไม่เลือกจะเปิดแผงควบคุมหลังบ้าน)")
+            .addChannelTypes(ChannelType.GuildText)
+            .setRequired(false)
+    )
+    .addStringOption(o =>
+        o.setName("mode")
+            .setDescription("เลือกประเภทแผงแจกที่ต้องการส่งทันที")
+            .setRequired(false)
+            .addChoices(
+                { name: "🌐 ส่งแผงเลือกแมพรวม (Hub Selector - ปกแดง มีตัวเลื่อนเลือกแมพ)", value: "hub" },
+                { name: "🏎️ ส่งโพสต์แจกแมพ MAHANAKHON RACING (เฉพาะแมพนี้ตรงๆ)", value: "mahanakhon" },
+                { name: "🥊 ส่งโพสต์แจกแมพ SAI LUEAT ARCHIWA (เฉพาะแมพนี้ตรงๆ)", value: "sailueat" },
+                { name: "🔫 ส่งโพสต์แจกแมพ VOXEL WARS (เฉพาะแมพนี้ตรงๆ)", value: "voxel" }
             )
     );
 
 /**
- * 5. ฟังก์ชันประมวลผลคำสั่ง Slash Command (/scripthub setup)
+ * 6. ตัวจัดการคำสั่งเดี่ยว /scripthub
  */
 async function handleScriptHubCommand(interaction) {
     if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
         return interaction.reply({ content: "❌ เฉพาะผู้ดูแลระบบ (Administrator) เท่านั้นที่ใช้คำสั่งนี้ได้", ephemeral: true });
     }
 
-    const sub = interaction.options.getSubcommand();
+    const targetChannel = interaction.options.getChannel("channel");
+    const mode = interaction.options.getString("mode");
     const maps = loadMaps();
 
-    // /scripthub setup channel:#ห้อง [map:all/mahanakhon/...]
-    if (sub === "setup") {
-        const targetChannel = interaction.options.getChannel("channel");
-        const mapChoice = interaction.options.getString("map") || "all";
+    // กรณีเลือกส่งเข้าห้องทันที
+    if (targetChannel || mode) {
+        const dest = targetChannel || interaction.channel;
         await interaction.deferReply({ ephemeral: true });
 
         try {
-            if (mapChoice === "all") {
-                // ส่งแผงเลือกแมพรวม (รูปที่ 1: ปกแดง KRAKEN HUB + Dropdown)
+            if (!mode || mode === "hub") {
                 const hubPanel = makeHubPanel(maps);
-                await targetChannel.send({
+                await dest.send({
                     content: hubPanel.content,
                     files: hubPanel.files,
                     components: hubPanel.components
                 });
                 return interaction.editReply({
-                    content: `✅ ส่งแผงเลือกแมพรวม **KrakenHub Script Collection** ไปยังห้อง <#${targetChannel.id}> เรียบร้อยแล้ว!`
+                    content: `✅ ส่งแผงเลือกแมพรวม **KrakenHub Script Collection** ไปยังห้อง <#${dest.id}> เรียบร้อยแล้ว!`
                 });
             } else {
-                // ส่งโพสต์แจกสคริปต์เฉพาะแมพที่เลือกเดี่ยวๆ (รูปที่ 2: ปกเกม + หัวข้อใหญ่ + ปุ่มคัดลอก)
-                const panel = makeMapDeliveryPanel(mapChoice, false);
+                const panel = makeMapDeliveryPanel(mode, false);
                 if (!panel) {
-                    return interaction.editReply({
-                        content: `❌ ไม่พบข้อมูลแมพ \`${mapChoice}\` ในระบบ`
-                    });
+                    return interaction.editReply({ content: `❌ ไม่พบแมพ \`${mode}\` ในระบบ` });
                 }
-                await targetChannel.send({
+                await dest.send({
                     content: panel.content,
                     files: panel.files,
                     components: panel.components
                 });
                 return interaction.editReply({
-                    content: `✅ ส่งโพสต์แจกสคริปต์แมพ **${mapChoice.toUpperCase()}** ไปยังห้อง <#${targetChannel.id}> เรียบร้อยแล้ว!`
+                    content: `✅ ส่งโพสต์แจกสคริปต์แมพ **${mode.toUpperCase()}** ไปยังห้อง <#${dest.id}> เรียบร้อยแล้ว!`
                 });
             }
         } catch (err) {
-            return interaction.editReply({
-                content: `❌ ส่งข้อความไม่สำเร็จ: ${err.message}`
-            });
+            return interaction.editReply({ content: `❌ ส่งข้อความไม่สำเร็จ: ${err.message}` });
         }
     }
+
+    // กรณีพิมพ์ /scripthub เพียวๆ -> เปิดแผงควบคุมหลังบ้านแบบ All-in-One Dashboard
+    const dashboard = makeAdminDashboard(maps);
+    return interaction.reply({
+        embeds: dashboard.embeds,
+        components: dashboard.components,
+        ephemeral: true
+    });
 }
 
 module.exports = {
@@ -299,8 +490,8 @@ module.exports = {
     saveMaps,
     makeHubPanel,
     makeMapDeliveryPanel,
+    makeAdminDashboard,
     handleScriptHubInteraction,
     handleScriptHubCommand,
     scripthubSlashCommand
 };
-

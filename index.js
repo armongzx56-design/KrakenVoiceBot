@@ -1038,9 +1038,10 @@ const {
 } = require("./systems/vrBadge");
 
 client.on("interactionCreate", async interaction => {
-    // ScriptHub interactions (Select Menu & Buttons)
+    // ScriptHub interactions (Select Menu, Buttons & Modals)
     if ((interaction.isStringSelectMenu() && interaction.customId.startsWith("scripthub_")) ||
-        (interaction.isButton() && interaction.customId.startsWith("scripthub_"))) {
+        (interaction.isButton() && interaction.customId.startsWith("scripthub_")) ||
+        (interaction.isModalSubmit() && interaction.customId.startsWith("scripthub_"))) {
         return handleScriptHubInteraction(interaction);
     }
 
