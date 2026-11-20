@@ -171,7 +171,8 @@ const config = loadConfig();
 const {
     scripthubSlashCommand,
     handleScriptHubCommand,
-    handleScriptHubInteraction
+    handleScriptHubInteraction,
+    handleScriptHubAutocomplete
 } = require("./systems/scripthub");
 
 const commands = [
@@ -1038,6 +1039,11 @@ const {
 } = require("./systems/vrBadge");
 
 client.on("interactionCreate", async interaction => {
+    // ScriptHub Autocomplete (Realtime dynamic choices)
+    if (interaction.isAutocomplete() && interaction.commandName === "scripthub") {
+        return handleScriptHubAutocomplete(interaction);
+    }
+
     // ScriptHub interactions (Select Menu, Buttons & Modals)
     if ((interaction.isStringSelectMenu() && interaction.customId.startsWith("scripthub_")) ||
         (interaction.isButton() && interaction.customId.startsWith("scripthub_")) ||
