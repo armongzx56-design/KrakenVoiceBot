@@ -11,7 +11,8 @@ const {
     EmbedBuilder,
     ModalBuilder,
     TextInputBuilder,
-    TextInputStyle
+    TextInputStyle,
+    MessageFlags
 } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
@@ -198,6 +199,14 @@ function makeHubPanel(maps = null) {
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
 
+    const resetRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("scripthub_reset_menu")
+            .setLabel("รีเซ็ตเมนู / ย้อนกลับ")
+            .setEmoji("🔄")
+            .setStyle(ButtonStyle.Secondary)
+    );
+
     const hubImagePath = path.join(ASSETS_DIR, "krakenhub_hub.jpg");
     const files = [];
     if (fs.existsSync(hubImagePath)) {
@@ -213,14 +222,14 @@ function makeHubPanel(maps = null) {
     return {
         embeds: [embed],
         files: files,
-        components: [row]
+        components: [row, resetRow]
     };
 }
 
 /**
  * 2. หน้ารับสคริปต์ของแต่ละแมพ: ข้อความตัวใหญ่ + ปกรูปเกม + ปุ่มคัดลอก (ขอบแดง)
  */
-function makeMapDeliveryPanel(mapId, showBackBtn = false) {
+function makeMapDeliveryPanel(mapId, showBackBtn = true) {
     const maps = loadMaps();
     const map = maps[mapId] || maps.mahanakhon || Object.values(maps)[0];
     if (!map) return null;
@@ -237,7 +246,7 @@ function makeMapDeliveryPanel(mapId, showBackBtn = false) {
         buttons.push(
             new ButtonBuilder()
                 .setCustomId("scripthub_back_to_hub")
-                .setLabel("เลือกแมพอื่น")
+                .setLabel("ย้อนกลับ / เลือกแมพอื่น")
                 .setEmoji("🔙")
                 .setStyle(ButtonStyle.Secondary)
         );
@@ -291,7 +300,7 @@ function makeAdminDashboard(maps = null) {
         const hasImg = (m.imagePath && fs.existsSync(m.imagePath)) || m.imageUrl;
         embed.addFields({
             name: `${m.emoji || "🎮"} ${m.name || id} (\`ID: ${id}\`)`,
-            value: `• **หัวข้อ:** ${m.title || m.name || id}\n• **รูปปก:** ${hasImg ? "✅ มีรูปปก" : "❌ ไม่มีรูป"}\n• **โค้ดสคริปต์:** \`${(m.script || "").slice(0, 70)}...\``,
+            value: `• **หัวข้อ:** ${m.title || m.name || id}\n• **คำอธิบาย:** ${m.description || "-"}\n• **รูปปก:** ${hasImg ? "✅ มีรูปปก" : "❌ ไม่มีรูป"}\n• **โค้ดสคริปต์:** \`${(m.script || "").slice(0, 50)}...\``,
             inline: false
         });
     }
@@ -319,6 +328,11 @@ function makeAdminDashboard(maps = null) {
             .setCustomId("scripthub_admin_open_edit")
             .setLabel("แก้ไขสคริปต์")
             .setEmoji("✏️")
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId("scripthub_admin_open_desc")
+            .setLabel("แก้ไขคำอธิบาย")
+            .setEmoji("📝")
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId("scripthub_admin_refresh")
@@ -373,18 +387,54 @@ async function handleScriptHubInteraction(interaction) {
     // 5.1 สมาชิกเลือกแมพจาก Dropdown Menu -> ส่งหน้ารับสคริปต์แบบ Ephemeral (เห็นเฉพาะคนที่กดคนเดียว)
     if (interaction.isStringSelectMenu() && interaction.customId === "scripthub_select_map") {
         const selectedId = interaction.values[0];
-        const panel = makeMapDeliveryPanel(selectedId, false);
+        const panel = makeMapDeliveryPanel(selectedId, true); // มีปุ่มย้อนกลับให้กดเสมอ
 
         if (!panel) {
             return interaction.reply({ content: "❌ ไม่พบข้อมูลแมพที่เลือก", ephemeral: true });
         }
 
-        return interaction.reply({
+        // กรณีเลือกแมพจากในหน้าต่างส่วนตัว (Ephemeral) ที่เคยกดย้อนกลับมา ให้ Update หน้านั้นทันที
+        const isEphemeral = interaction.message?.flags?.has(MessageFlags.Ephemeral) || Boolean(interaction.message?.flags?.bitfield & 64);
+        if (isEphemeral) {
+            return interaction.update({
+                embeds: panel.embeds,
+                files: panel.files,
+                components: panel.components
+            }).catch(err => console.error("[SCRIPTHUB EPHEMERAL UPDATE ERR]", err.message));
+        }
+
+        // กรณีเลือกจากแผงหลักในห้อง: ตอบกลับส่วนตัว (Ephemeral) ให้เฉพาะคนที่กดเห็น
+        await interaction.reply({
             embeds: panel.embeds,
             files: panel.files,
             components: panel.components,
             ephemeral: true
         }).catch(err => console.error("[SCRIPTHUB EPHEMERAL REPLY ERR]", err.message));
+
+        // รีเซ็ต Dropdown บนแผงรวมในห้องทันที เพื่อล้างเครื่องหมายถูก (Checkmark) ฝั่ง Discord Client
+        // ทำให้สมาชิกไม่ต้องไปกดแมพอื่นก่อน สามารถกดเลือกแมพเดิมซ้ำได้ทันที
+        if (interaction.message && interaction.message.editable) {
+            try {
+                const hub = makeHubPanel();
+                await interaction.message.edit({
+                    embeds: hub.embeds,
+                    components: hub.components
+                });
+            } catch (editErr) {
+                // ข้ามหากติด discord rate limit
+            }
+        }
+        return;
+    }
+
+    // สมาชิกกดปุ่ม "รีเซ็ตเมนู / ล้างการเลือก" เพื่อล้างการเลือกใน Dropdown
+    if (interaction.isButton() && interaction.customId === "scripthub_reset_menu") {
+        const hubPanel = makeHubPanel();
+        return interaction.update({
+            embeds: hubPanel.embeds,
+            files: hubPanel.files,
+            components: hubPanel.components
+        }).catch(err => console.error("[SCRIPTHUB RESET MENU ERR]", err.message));
     }
 
     // 5.2 สมาชิกกดปุ่ม "คัดลอกสคริปต์"
@@ -403,7 +453,7 @@ async function handleScriptHubInteraction(interaction) {
         });
     }
 
-    // 5.3 สมาชิกกดปุ่ม "เลือกแมพอื่น"
+    // 5.3 สมาชิกกดปุ่ม "ย้อนกลับ / เลือกแมพอื่น" (จากหน้ารับสคริปต์ Ephemeral)
     if (interaction.isButton() && interaction.customId === "scripthub_back_to_hub") {
         const hubPanel = makeHubPanel();
         return interaction.update({
@@ -512,6 +562,32 @@ async function handleScriptHubInteraction(interaction) {
         return interaction.showModal(modal);
     }
 
+    if (interaction.isButton() && interaction.customId === "scripthub_admin_open_desc") {
+        const modal = new ModalBuilder()
+            .setCustomId("scripthub_modal_desc")
+            .setTitle("📝 แก้ไขคำอธิบายใต้ชื่อแมพ");
+
+        const mapInput = new TextInputBuilder()
+            .setCustomId("desc_map_id")
+            .setLabel("รหัสแมพที่จะแก้ไข (เช่น mahanakhon):")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        const descInput = new TextInputBuilder()
+            .setCustomId("desc_new_text")
+            .setLabel("ข้อความคำอธิบายใหม่ใต้ชื่อแมพ:")
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder("เช่น สคริปต์แมพมหานคร เรซซิ่ง (ออโต้ฟาร์ม, จูนรถ, วาร์ปส่งของ)")
+            .setRequired(true);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(mapInput),
+            new ActionRowBuilder().addComponents(descInput)
+        );
+
+        return interaction.showModal(modal);
+    }
+
     if (interaction.isModalSubmit() && interaction.customId === "scripthub_modal_add") {
         await interaction.deferReply({ ephemeral: true });
         const id = interaction.fields.getTextInputValue("id_input").toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
@@ -558,6 +634,27 @@ async function handleScriptHubInteraction(interaction) {
 
         return interaction.editReply({
             content: `✅ อัปเดตสคริปต์แมพ **${maps[mapId].name}** เรียบร้อยแล้ว (เซฟและมีผลทันทีไม่ต้องรีบ็อต)!\n🔄 ซิงก์แผงข้อความในดิสคอร์ด: **${updated}** จุด`
+        });
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === "scripthub_modal_desc") {
+        await interaction.deferReply({ ephemeral: true });
+        const mapId = interaction.fields.getTextInputValue("desc_map_id").toLowerCase().trim();
+        const newDesc = interaction.fields.getTextInputValue("desc_new_text").trim();
+
+        const maps = loadMaps();
+        if (!maps[mapId]) {
+            return interaction.editReply({ content: `❌ ไม่พบแมพ \`${mapId}\` ในระบบ` });
+        }
+
+        maps[mapId].description = newDesc;
+        saveMaps(maps);
+
+        // อัปเดตแผงในห้องแบบ Realtime ทันที
+        const updated = await updateAllLivePanels(interaction.client);
+
+        return interaction.editReply({
+            content: `✅ อัปเดตคำอธิบายใต้ชื่อแมพ **${maps[mapId].name}** เรียบร้อยแล้ว (เซฟทันทีไม่ต้องรีบ็อต)!\n📝 **คำอธิบายใหม่:** \`${newDesc}\`\n🔄 ซิงก์แผงข้อความในดิสคอร์ด: **${updated}** จุด`
         });
     }
 }
@@ -659,7 +756,23 @@ const scripthubSlashCommand = new SlashCommandBuilder()
         sub.setName("list")
             .setDescription("[ 📋 ] ดูรายชื่อแมพ รูปภาพ และโค้ดสคริปต์ทั้งหมดในหลังบ้าน")
     )
-    // 6.6 /scripthub panel
+    // 6.6 /scripthub desc
+    .addSubcommand(sub =>
+        sub.setName("desc")
+            .setDescription("[ 📝 ] แก้ไขคำอธิบายใต้ชื่อแมพในเมนู Dropdown (Realtime ไม่ต้องรีบ็อต)")
+            .addStringOption(o =>
+                o.setName("map")
+                    .setDescription("เลือกแมพที่ต้องการแก้ไขคำอธิบาย")
+                    .setRequired(true)
+                    .setAutocomplete(true)
+            )
+            .addStringOption(o =>
+                o.setName("text")
+                    .setDescription("ข้อความคำอธิบายใหม่ใต้ชื่อแมพ (เช่น สคริปต์ออโต้ฟาร์ม, จูนรถ, วาร์ปส่งของ)")
+                    .setRequired(true)
+            )
+    )
+    // 6.7 /scripthub panel
     .addSubcommand(sub =>
         sub.setName("panel")
             .setDescription("[ 🎛️ ] เปิดแผงควบคุมหลังบ้านแบบ Interactive Buttons")
@@ -823,6 +936,28 @@ async function handleScriptHubCommand(interaction) {
 
         return interaction.editReply({
             content: `✅ **เพิ่มแมพ ${name} (\`ID: ${id}\`) เข้าระบบสำเร็จ!**\nมีผลในดรอปดาวน์และแผงแจกทันทีแบบ Realtime (ซิงก์ข้อความ: ${updated} จุด)`
+        });
+    }
+
+    // /scripthub desc
+    if (sub === "desc") {
+        const mapId = interaction.options.getString("map");
+        const newDesc = interaction.options.getString("text").trim();
+
+        if (!maps[mapId]) {
+            return interaction.reply({ content: `❌ ไม่พบแมพ \`${mapId}\` ในระบบ`, ephemeral: true });
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+
+        const oldDesc = maps[mapId].description || "ไม่มี";
+        maps[mapId].description = newDesc;
+        saveMaps(maps);
+
+        const updated = await updateAllLivePanels(interaction.client);
+
+        return interaction.editReply({
+            content: `✅ **แก้ไขคำอธิบายใต้ชื่อแมพ ${maps[mapId].name} สำเร็จและเซฟแบบ Realtime ทันที!**\n\n📌 **แมพ:** \`${maps[mapId].name}\` (\`${mapId}\`)\n📝 **คำอธิบายเดิม:** \`${oldDesc}\`\n✨ **คำอธิบายใหม่:** \`${newDesc}\`\n\n🔄 **ผลการซิงก์:** แผงข้อความในดิสคอร์ดอัปเดตคำอธิบายใหม่ทันที **${updated}** จุด (ไม่ต้องรีสตาร์ตบ็อต)`
         });
     }
 
