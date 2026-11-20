@@ -1096,7 +1096,7 @@ client.on("interactionCreate", async interaction => {
         if (interaction.customId === "btn_copy_loader") {
             const defaultLoader = 'loadstring(game:HttpGet("https://tinyurl.com/KrakenHubV2"))()';
             const wlConfig = config[interaction.guildId]?.whitelist;
-            const loaderCode = wlConfig?.scriptLoader || defaultLoader;
+            const loaderCode = config[interaction.guildId]?.lastScriptLoader || wlConfig?.scriptLoader || defaultLoader;
             return interaction.reply({
                 content: `📥 **คัดลอกโค้ดสคริปต์ KrakenHub Loader ด้านล่างไปรันได้เลย:**\n\`\`\`lua\n${loaderCode}\n\`\`\``,
                 ephemeral: true
@@ -1287,39 +1287,49 @@ client.on("interactionCreate", async interaction => {
 
         const defaultLoader = 'loadstring(game:HttpGet("https://tinyurl.com/KrakenHubV2"))()';
         const loaderCode = customLoader || config[interaction.guildId]?.whitelist?.scriptLoader || defaultLoader;
+        if (customLoader) {
+            config[interaction.guildId] ??= {};
+            config[interaction.guildId].lastScriptLoader = customLoader;
+            saveConfig(config);
+        }
 
-        // ฟอร์แมตรายการ Features & Fixes ให้สวยงาม
-        const formatList = text => {
+        // ฟอร์แมตรายการ Features & Fixes ด้วย Discord ANSI Highlight ให้สีตรงกับดีไซน์
+        const ESC = "\u001b";
+        const ANSI_RESET = `${ESC}[0m`;
+        const ANSI_GREEN = `${ESC}[1;32m`;
+        const ANSI_YELLOW = `${ESC}[1;33m`;
+        const ANSI_WHITE = `${ESC}[0;37m`;
+
+        const formatAnsiList = text => {
             if (!text) return "";
-            return text.split(/\\n|\n/).map(line => line.trim()).filter(Boolean).map(line => {
-                if (line.startsWith("•") || line.startsWith("-") || line.startsWith("*")) return line;
-                return `• ${line}`;
-            }).join("\n");
+            return text
+                .split(/\\n|\n/)
+                .map(line => line.trim())
+                .filter(Boolean)
+                .map(line => {
+                    const clean = line.replace(/^[•\-\*]\s*/, "");
+                    return `${ANSI_WHITE}• ${clean}${ANSI_RESET}`;
+                })
+                .join("\n");
         };
 
-        const formattedFeatures = formatList(featuresRaw);
-        const formattedFixes = fixesRaw ? formatList(fixesRaw) : null;
+        const formattedFeatures = formatAnsiList(featuresRaw);
+        const formattedFixes = fixesRaw ? formatAnsiList(fixesRaw) : null;
+
+        let description = `\`\`\`ansi\n${ANSI_GREEN}✨ สิ่งที่เพิ่มเข้ามาใหม่ (New Features):${ANSI_RESET}\n${formattedFeatures}\n\`\`\``;
+
+        if (formattedFixes) {
+            description += `\n\`\`\`ansi\n${ANSI_YELLOW}🔧 การแก้ไขบั๊ก (Bug Fixes):${ANSI_RESET}\n${formattedFixes}\n\`\`\``;
+        }
 
         const embed = new EmbedBuilder()
             .setColor(0x5865F2)
             .setAuthor({
-                name: "KrakenHub Development Team",
+                name: `🚀 SCRIPT UPDATE CHANGELOG • ${version.toUpperCase()} LIVE`,
                 iconURL: client.user.displayAvatarURL({ dynamic: true })
             })
-            .setTitle(`🚀 KRAKENHUB SCRIPT UPDATE • ${game.toUpperCase()}`)
-            .setDescription(`🎮 **เกม:** **${game}** • 🏷️ **เวอร์ชัน:** \`${version}\`\nอัปเดตระบบสคริปต์เวอร์ชันล่าสุดพร้อมให้ใช้งานแล้วบนตัวรันทุกตัว!`)
-            .addFields(
-                { name: "✨ สิ่งที่เพิ่มเข้ามาใหม่ (New Features)", value: formattedFeatures.slice(0, 1024) }
-            );
-
-        if (formattedFixes) {
-            embed.addFields({ name: "🔧 การแก้ไข & ปรับปรุง (Fixes & Improvements)", value: formattedFixes.slice(0, 1024) });
-        }
-
-        embed.addFields({
-            name: "💻 ตัวสคริปต์ Loader (นำไปรันในเกม)",
-            value: `\`\`\`lua\n${loaderCode}\n\`\`\``
-        });
+            .setTitle(`🎮 อัปเดตสคริปต์ ${game}`)
+            .setDescription(description);
 
         if (customImage) {
             embed.setImage(customImage);
@@ -1332,11 +1342,11 @@ client.on("interactionCreate", async interaction => {
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId("btn_copy_loader")
-                .setLabel("📥 คัดลอก Loader")
+                .setLabel("📥 ก็อปปี้โค้ด Loader")
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId("btn_check_my_key")
-                .setLabel("🔑 ตรวจสอบคีย์ของฉัน")
+                .setLabel("🔑 เช็คคีย์ของฉัน")
                 .setStyle(ButtonStyle.Secondary)
         );
 
