@@ -142,7 +142,7 @@ function makeTicketPanel(options = {}) {
 
     const embed = new EmbedBuilder()
         .setColor(0x2B2D31)
-        .setTitle(`${leftWing} ${ticketIcon} Ticket Support ${rightWing}`)
+        .setTitle(`${leftWing} Ticket Support ${rightWing}`)
         .setDescription(`${pinkArrow} **กดปุ่มด้านล่างเพื่อเปิด Ticket และติดต่อทีมงาน**`);
 
     if (options.bannerUrl) {
