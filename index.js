@@ -1265,16 +1265,15 @@ client.on("interactionCreate", async interaction => {
             updateEmoji = findEmoji(["update", "rocket", "announc", "bell", "fire", "siren", "spark", "star", "game", "nitro", "312312"], "<a:312312:1570844178684846211>");
         }
 
-        const featureEmoji = findEmoji(["sparkle", "star", "shine", "new", "diamond", "fire", "tadapurple", "tada", "plus"], "<a:2659tadapurple:1569102206798397571>");
-        const fixEmoji = findEmoji(["wrench", "tool", "gear", "fix", "hammer", "setting", "bug", "pinkarrow", "arrow"], "<a:998057pinkarrow:1569102319105089637>");
-
-        // ฟอร์แมตรายการ Features & Fixes ด้วย Discord ANSI Highlight ให้สีตรงกับดีไซน์
+        // ฟอร์แมตรายการ Features & Fixes ด้วย Discord ANSI Highlight
+        // ไฮไลต์สีเขียวสดที่หัวข้อ New Features และสีเหลืองสดที่หัวข้อ Bug Fixes ภายในกล่อง
         const ESC = "\u001b";
         const ANSI_RESET = `${ESC}[0m`;
         const ANSI_GREEN = `${ESC}[1;32m`;
         const ANSI_YELLOW = `${ESC}[1;33m`;
+        const ANSI_WHITE = `${ESC}[0;37m`;
 
-        const formatAnsiList = (text, colorCode) => {
+        const formatAnsiList = text => {
             if (!text) return "";
             return text
                 .split(/\\n|\n/)
@@ -1282,18 +1281,18 @@ client.on("interactionCreate", async interaction => {
                 .filter(Boolean)
                 .map(line => {
                     const clean = line.replace(/^[•\-\*]\s*/, "");
-                    return `${colorCode}• ${clean}${ANSI_RESET}`;
+                    return `${ANSI_WHITE}• ${clean}${ANSI_RESET}`;
                 })
                 .join("\n");
         };
 
-        const formattedFeatures = formatAnsiList(featuresRaw, ANSI_GREEN);
-        const formattedFixes = fixesRaw ? formatAnsiList(fixesRaw, ANSI_YELLOW) : null;
+        const formattedFeatures = formatAnsiList(featuresRaw);
+        const formattedFixes = fixesRaw ? formatAnsiList(fixesRaw) : null;
 
-        let description = `${featureEmoji} **สิ่งที่เพิ่มเข้ามาใหม่ (New Features):**\n\`\`\`ansi\n${formattedFeatures}\n\`\`\``;
+        let description = `\`\`\`ansi\n${ANSI_GREEN}✨ สิ่งที่เพิ่มเข้ามาใหม่ (New Features):${ANSI_RESET}\n${formattedFeatures}\n\`\`\``;
 
         if (formattedFixes) {
-            description += `\n${fixEmoji} **การแก้ไขบั๊ก (Bug Fixes):**\n\`\`\`ansi\n${formattedFixes}\n\`\`\``;
+            description += `\n\`\`\`ansi\n${ANSI_YELLOW}🔧 การแก้ไขบั๊ก (Bug Fixes):${ANSI_RESET}\n${formattedFixes}\n\`\`\``;
         }
 
         const cleanVer = (version.startsWith("v") || version.startsWith("V") ? version : `v${version}`)
