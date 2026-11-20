@@ -312,6 +312,7 @@ const commands = [
         .addStringOption(o => o.setName("features").setDescription("สิ่งที่เพิ่มเข้ามาใหม่ (ใช้ \\n เพื่อขึ้นบรรทัดใหม่)").setRequired(true))
         .addStringOption(o => o.setName("fixes").setDescription("สิ่งที่แก้ไข / ปรับปรุง (ใช้ \\n เพื่อขึ้นบรรทัดใหม่)").setRequired(false))
         .addChannelOption(o => o.setName("channel").setDescription("ห้องที่จะส่งประกาศ (ถ้าไม่เลือกจะส่งห้องปัจจุบัน)").addChannelTypes(ChannelType.GuildText).setRequired(false))
+        .addStringOption(o => o.setName("emoji").setDescription("ใส่อีโมจิเคลื่อนไหวที่ต้องการใช้ เช่น <a:rocket:123> (ถ้าไม่ใส่จะดึงจากเซิร์ฟเวอร์ให้อัตโนมัติ)").setRequired(false))
         .addStringOption(o => o.setName("ping").setDescription("เลือกแท็กแจ้งเตือน").setRequired(false)
             .addChoices(
                 { name: "🔕 ไม่แท็ก (None)", value: "none" },
@@ -1254,8 +1255,32 @@ client.on("interactionCreate", async interaction => {
         const featuresRaw = interaction.options.getString("features", true);
         const fixesRaw = interaction.options.getString("fixes");
         const targetChannel = interaction.options.getChannel("channel") || interaction.channel;
+        const customEmoji = interaction.options.getString("emoji");
         const pingType = interaction.options.getString("ping") || "none";
         const customImage = interaction.options.getString("image");
+
+        // ค้นหาอีโมจิเคลื่อนไหวสำหรับหัวข้ออัปเดต
+        let updateEmoji = customEmoji ? resolveMessageEmojisAndFormatting(customEmoji, interaction.guild) : null;
+        if (!updateEmoji && interaction.guild) {
+            try {
+                const guildEmojis = await interaction.guild.emojis.fetch();
+                const animated = guildEmojis.filter(e => e.animated);
+                const best = animated.find(e => /update|rocket|announc|bell|fire|siren|spark|star|game|nitro|312312/i.test(e.name))
+                    || animated.first();
+                if (best) updateEmoji = `<a:${best.name}:${best.id}>`;
+            } catch {}
+        }
+
+        if (!updateEmoji && client.application?.emojis?.cache) {
+            const appAnimated = client.application.emojis.cache.filter(e => e.animated);
+            const best = appAnimated.find(e => /rocket|update|tada|fire|spark|star|money|kitty/i.test(e.name))
+                || appAnimated.first();
+            if (best) updateEmoji = `<a:${best.name}:${best.id}>`;
+        }
+
+        if (!updateEmoji) {
+            updateEmoji = "<a:312312:1570844178684846211>";
+        }
 
         // ฟอร์แมตรายการ Features & Fixes ด้วย Discord ANSI Highlight ให้สีตรงกับดีไซน์
         const ESC = "\u001b";
@@ -1295,10 +1320,10 @@ client.on("interactionCreate", async interaction => {
         const embed = new EmbedBuilder()
             .setColor(0x5865F2)
             .setAuthor({
-                name: "🚀 SCRIPT UPDATE CHANGELOG",
+                name: "SCRIPT UPDATE CHANGELOG",
                 iconURL: client.user.displayAvatarURL({ dynamic: true })
             })
-            .setTitle(`🎮 อัปเดตสคริปต์ ${game}`)
+            .setTitle(`${updateEmoji} อัปเดตสคริปต์ ${game}`)
             .setDescription(description);
 
         const files = [];
