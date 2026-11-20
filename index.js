@@ -419,7 +419,7 @@ const COMMON_EMOJI_SHORTCODES = {
     "x": "❌", "white_check_mark": "✅", "sparkles": "✨",
     "key": "🔑", "link": "🔗", "bell": "🔔", "loudspeaker": "📢",
     "mega": "📢", "shield": "🛡️", "lock": "🔒", "unlock": "🔓",
-    "ticket": "🎫", "warning": "⚠️", "gear": "⚙️", "tada": "🎉",
+    "ticket": "<a:437007ticket:1569102283067621499>", "warning": "⚠️", "gear": "⚙️", "tada": "🎉",
     "robot": "🤖", "gem": "💎", "money": "💰", "moneybag": "💰",
     "crown": "👑", "headphone": "🎧", "stop": "🛑", "pin": "📌",
     "pushpin": "📌", "memo": "📝", "bulb": "💡", "arrow_right": "➡️",
@@ -911,7 +911,8 @@ client.once("clientReady", async () => {
         }
 
         try {
-            const { updateAllSupportedPanels } = require("./systems/supported");
+            const { updateAllSupportedPanels, autoDetectSupportedEmojis } = require("./systems/supported");
+            await autoDetectSupportedEmojis(client).catch(() => null);
             const syncedSupported = await updateAllSupportedPanels(client);
             if (syncedSupported > 0) {
                 console.log(`[SUPPORTED READY SYNC] Synced ${syncedSupported} live panels on startup`);
@@ -976,7 +977,7 @@ const TICKET_SUBTYPES = {
     bug: [{id:"technical",label:"ปัญหาทางเทคนิค",emoji:"⚙️"},{id:"error",label:"พบข้อผิดพลาด / บั๊ก",emoji:"🐛"},{id:"other",label:"ปัญหาอื่น ๆ",emoji:"❔"}]
 };
 async function sendTicketPanel(channel) {
-    const embed=new EmbedBuilder().setColor(0x5865F2).setTitle("🎫 KRAKEN SUPPORT CENTER").setDescription("**ศูนย์ช่วยเหลือ Kraken Community**\nเลือกหมวดหมู่ จากนั้นเลือกหัวข้อย่อย ระบบจะเปิดห้อง Ticket ส่วนตัวให้โดยอัตโนมัติ\n\n🔒 ข้อมูลเห็นได้เฉพาะคุณและทีมงาน");
+    const embed=new EmbedBuilder().setColor(0x5865F2).setTitle("<a:437007ticket:1569102283067621499> KRAKEN SUPPORT CENTER").setDescription("**ศูนย์ช่วยเหลือ Kraken Community**\nเลือกหมวดหมู่ จากนั้นเลือกหัวข้อย่อย ระบบจะเปิดห้อง Ticket ส่วนตัวให้โดยอัตโนมัติ\n\n🔒 ข้อมูลเห็นได้เฉพาะคุณและทีมงาน");
     const rows=[], entries=Object.entries(TICKET_TYPES);
     for(let i=0;i<entries.length;i+=2) {
         const row=new ActionRowBuilder();
@@ -991,7 +992,7 @@ async function createTicket(interaction,ticketType,subType) {
     await interaction.deferReply({ephemeral:true});
     try {
         const existing=guild.channels.cache.find(c=>c.type===ChannelType.GuildText&&c.topic?.startsWith("kraken-ticket:"+interaction.user.id+":"));
-        if(existing) return interaction.editReply({content:"🎫 คุณมี Ticket ที่ยังเปิดอยู่แล้ว: "+existing});
+        if(existing) return interaction.editReply({content:"<a:437007ticket:1569102283067621499> คุณมี Ticket ที่ยังเปิดอยู่แล้ว: "+existing});
         const tc=(config[guild.id]||{}).ticket||{};
         const n=BigInt(tc.ticketCounter||"0").toString();
         tc.ticketCounter=(BigInt(n)+1n).toString(); config[guild.id]??={}; config[guild.id].ticket=tc; saveConfig(config);
@@ -1004,7 +1005,7 @@ async function createTicket(interaction,ticketType,subType) {
         if(staff) overwrites.push({id:staff.id,allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages,PermissionsBitField.Flags.ReadMessageHistory,PermissionsBitField.Flags.AttachFiles]});
         const channel=await guild.channels.create({name:"ticket-"+number,type:ChannelType.GuildText,parent:category?.id,topic:"kraken-ticket:"+interaction.user.id+":"+number+":"+ticketType+":"+subType,permissionOverwrites:overwrites});
         const closeRow=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("ticket_close").setLabel("ปิด Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger));
-        const ticketEmbed=new EmbedBuilder().setColor(0x57F287).setTitle("🎫 Ticket #"+number+" • "+type.label)
+        const ticketEmbed=new EmbedBuilder().setColor(0x57F287).setTitle("<a:437007ticket:1569102283067621499> Ticket #"+number+" • "+type.label)
             .setDescription("สวัสดีคุณ <@"+interaction.user.id+"> 👋\nทีมงานจะเข้ามาดูแลโดยเร็วที่สุด\n\n**หัวข้อที่เลือก:** "+sub.label+"\nกรุณาระบุรายละเอียดและแนบหลักฐานที่เกี่ยวข้อง")
             .addFields({name:"เลขตั๋ว",value:"#"+number,inline:true},{name:"สถานะ",value:"🟢 เปิดใช้งาน",inline:true}).setTimestamp();
         await channel.send({content:"<@"+interaction.user.id+">"+(staff?" <@&"+staff.id+">":""),embeds:[ticketEmbed],components:[closeRow],allowedMentions:{users:[interaction.user.id],roles:staff?[staff.id]:[]}});

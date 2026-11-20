@@ -3,6 +3,11 @@
     "imagePath": "D:\\roblox-script\\KrakenVoiceBot\\assets\\krakenhub_hub.jpg",
     "imageUrl": null
   },
+  "emojis": {
+    "online": null,
+    "offline": null,
+    "updating": null
+  },
   "maps": {
     "mahanakhon": {
       "id": "mahanakhon",
@@ -26,3 +31,4 @@
     }
   }
 }
+

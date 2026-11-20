@@ -138,10 +138,11 @@ function makeTicketPanel(options = {}) {
     const leftWing = "<a:633625leftangleallwhitewing:1569102297487773696>";
     const rightWing = "<a:602393rightangleallwhitewing:1569102295738884217>";
     const pinkArrow = "<a:998057pinkarrow:1569102319105089637>";
+    const ticketIcon = "<a:437007ticket:1569102283067621499>";
 
     const embed = new EmbedBuilder()
         .setColor(0x2B2D31)
-        .setTitle(`${leftWing} Ticket Support ${rightWing}`)
+        .setTitle(`${leftWing} ${ticketIcon} Ticket Support ${rightWing}`)
         .setDescription(`${pinkArrow} **กดปุ่มด้านล่างเพื่อเปิด Ticket และติดต่อทีมงาน**`);
 
     if (options.bannerUrl) {

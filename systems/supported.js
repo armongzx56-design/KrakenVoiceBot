@@ -67,13 +67,21 @@ const ANIMATED = {
     arrow: "<a:998057pinkarrow:1569102319105089637>",
     sparkle: "<a:2659tadapurple:1569102206798397571>",
     coin: "<a:933416goldenspincoin:1569102317305860226>",
-    fire: "<a:1310107692995706900:1570844182317113364>"
+    fire: "<a:1310107692995706900:1570844182317113364>",
+    ticket: "<a:437007ticket:1569102283067621499>",
+    online: null,
+    offline: null
 };
 
 const DEFAULT_DATA = {
     banner: {
         imagePath: path.join(ASSETS_DIR, "krakenhub_hub.jpg"),
         imageUrl: null
+    },
+    emojis: {
+        online: null,
+        offline: null,
+        updating: null
     },
     maps: {
         mahanakhon: { id: "mahanakhon", name: "MAHANAKHON RACING", status: "online" },
@@ -93,6 +101,8 @@ function loadSupportedData() {
     if (!data || typeof data !== "object" || !data.maps) {
         data = JSON.parse(JSON.stringify(DEFAULT_DATA));
     }
+
+    data.emojis ??= { online: null, offline: null, updating: null };
 
     if (data.banner && data.banner.imagePath) {
         data.banner.imagePath = resolveImagePath(data.banner.imagePath);
@@ -130,8 +140,93 @@ function registerSupportedPanel(channelId, messageId) {
     }
 }
 
+function parseEmojiForComponent(emojiStr, fallbackUnicode = "🟢") {
+    if (!emojiStr) return fallbackUnicode;
+    const match = String(emojiStr).match(/^<(a)?:([a-zA-Z0-9_~]+):(\d+)>$/);
+    if (match) {
+        return { id: match[3], name: match[2], animated: Boolean(match[1]) };
+    }
+    return emojiStr;
+}
+
+function resolveCustomEmojiInput(input, guild) {
+    if (!input) return null;
+    const match = input.match(/<(a)?:([a-zA-Z0-9_~]+):(\d+)>/);
+    if (match) return match[0];
+    const nameMatch = input.match(/^:?([a-zA-Z0-9_~]+):?$/);
+    if (nameMatch && guild?.emojis?.cache) {
+        const found = guild.emojis.cache.find(e => e.name.toLowerCase() === nameMatch[1].toLowerCase());
+        if (found) return `<${found.animated ? "a" : ""}:${found.name}:${found.id}>`;
+    }
+    return input;
+}
+
+async function autoDetectSupportedEmojis(client) {
+    if (!client) return null;
+    let foundOnline = null;
+    let foundOffline = null;
+
+    try {
+        const allEmojis = [];
+        for (const guild of client.guilds.cache.values()) {
+            try {
+                const fetched = await guild.emojis.fetch().catch(() => null);
+                if (fetched) allEmojis.push(...fetched.values());
+                else if (guild.emojis?.cache) allEmojis.push(...guild.emojis.cache.values());
+            } catch (_) {
+                if (guild.emojis?.cache) allEmojis.push(...guild.emojis.cache.values());
+            }
+        }
+        if (client.application?.emojis) {
+            try {
+                const appFetched = await client.application.emojis.fetch().catch(() => null);
+                if (appFetched) allEmojis.push(...appFetched.values());
+                else if (client.application.emojis.cache) allEmojis.push(...client.application.emojis.cache.values());
+            } catch (_) {
+                if (client.application.emojis.cache) allEmojis.push(...client.application.emojis.cache.values());
+            }
+        }
+
+        // ค้นหาอีโมจิ online (แบบเคลื่อนไหว animated)
+        const onlineMatch = allEmojis.find(e => e.animated && /^online$/i.test(e.name))
+            || allEmojis.find(e => e.animated && /online/i.test(e.name))
+            || allEmojis.find(e => /^online$/i.test(e.name));
+
+        // ค้นหาอีโมจิ offline (แบบเคลื่อนไหว animated)
+        const offlineMatch = allEmojis.find(e => e.animated && /^offline$/i.test(e.name))
+            || allEmojis.find(e => e.animated && /offline/i.test(e.name))
+            || allEmojis.find(e => /^offline$/i.test(e.name));
+
+        if (onlineMatch) foundOnline = `<${onlineMatch.animated ? "a" : ""}:${onlineMatch.name}:${onlineMatch.id}>`;
+        if (offlineMatch) foundOffline = `<${offlineMatch.animated ? "a" : ""}:${offlineMatch.name}:${offlineMatch.id}>`;
+
+        const data = loadSupportedData();
+        let changed = false;
+        data.emojis ??= {};
+
+        if (foundOnline && data.emojis.online !== foundOnline) {
+            data.emojis.online = foundOnline;
+            changed = true;
+        }
+        if (foundOffline && data.emojis.offline !== foundOffline) {
+            data.emojis.offline = foundOffline;
+            changed = true;
+        }
+
+        if (changed) {
+            saveSupportedData(data);
+            console.log(`[SUPPORTED EMOJI SYNC] Auto-detected emojis: online=${foundOnline || "kept"}, offline=${foundOffline || "kept"}`);
+        }
+    } catch (err) {
+        console.error("[SUPPORTED EMOJI AUTO-DETECT ERR]", err.message);
+    }
+
+    return { online: foundOnline, offline: foundOffline };
+}
+
 async function updateAllSupportedPanels(client) {
     if (!client) return 0;
+    await autoDetectSupportedEmojis(client).catch(() => null);
     const panels = loadSupportedPanels();
     const data = loadSupportedData();
     const validPanels = [];
@@ -176,15 +271,30 @@ async function downloadAndSaveImage(url, destPath) {
     }
 }
 
-function getMapStatusInfo(status) {
+function getMapStatusInfo(status, data = null) {
     const s = String(status || "").toLowerCase().trim();
+    const currentData = data || cachedData || loadSupportedData();
+    const emojis = currentData?.emojis || {};
+
     if (s === "updating" || s === "yellow" || s === "update" || s === "maintenance") {
-        return { icon: "🟡", tag: "กำลังอัปเดต", code: "updating" };
+        return {
+            icon: emojis.updating || "🟡",
+            tag: "กำลังอัปเดต",
+            code: "updating"
+        };
     }
     if (s === "offline" || s === "red" || s === "disabled" || s === "patched") {
-        return { icon: "🔴", tag: "ปิดปรับปรุง", code: "offline" };
+        return {
+            icon: emojis.offline || "🔴",
+            tag: "ปิดปรับปรุง",
+            code: "offline"
+        };
     }
-    return { icon: "🟢", tag: "ใช้งานได้ปกติ", code: "online" };
+    return {
+        icon: emojis.online || "🟢",
+        tag: "ใช้งานได้ปกติ",
+        code: "online"
+    };
 }
 
 /**
@@ -195,7 +305,7 @@ function makeSupportedPanel(data = null) {
     const mapList = Object.values(data.maps || {});
 
     const statusLines = mapList.map(m => {
-        const info = getMapStatusInfo(m.status);
+        const info = getMapStatusInfo(m.status, data);
         return `> ${info.icon} **${m.name.toUpperCase()}**  \` ${info.tag} \``;
     }).join("\n");
 
@@ -240,7 +350,7 @@ function makeSupportedAdminDashboard(data = null) {
         .setTimestamp();
 
     for (const m of mapList) {
-        const info = getMapStatusInfo(m.status);
+        const info = getMapStatusInfo(m.status, data);
         embed.addFields({
             name: `${info.icon} ${m.name} (\`ID: ${m.id}\`)`,
             value: `• **สถานะปัจจุบัน:** ${info.icon} \`${info.tag}\``,
@@ -252,32 +362,40 @@ function makeSupportedAdminDashboard(data = null) {
 
     // Row 0: Quick Status Dropdown (คลิกเลือกสลับสถานะ 1 คลิก มีผลสดทันที)
     const statusOptions = [];
+    const infoOnline = getMapStatusInfo("online", data);
+    const infoUpdating = getMapStatusInfo("updating", data);
+    const infoOffline = getMapStatusInfo("offline", data);
+
+    const onlineEmojiComp = parseEmojiForComponent(infoOnline.icon, "🟢");
+    const updatingEmojiComp = parseEmojiForComponent(infoUpdating.icon, "🟡");
+    const offlineEmojiComp = parseEmojiForComponent(infoOffline.icon, "🔴");
+
     for (const m of mapList) {
         if (m.status !== "online") {
             statusOptions.push(
                 new StringSelectMenuOptionBuilder()
-                    .setLabel(`🟢 เปิดใช้งาน: ${m.name}`.slice(0, 100))
+                    .setLabel(`เปิดใช้งาน: ${m.name}`.slice(0, 100))
                     .setDescription(`สลับเป็นสถานะ ใช้งานได้ปกติ`)
                     .setValue(`${m.id}__online`)
-                    .setEmoji("🟢")
+                    .setEmoji(onlineEmojiComp)
             );
         }
         if (m.status !== "updating") {
             statusOptions.push(
                 new StringSelectMenuOptionBuilder()
-                    .setLabel(`🟡 ตั้งอัปเดต: ${m.name}`.slice(0, 100))
+                    .setLabel(`ตั้งอัปเดต: ${m.name}`.slice(0, 100))
                     .setDescription(`สลับเป็นสถานะ อยู่ระหว่างอัปเดต`)
                     .setValue(`${m.id}__updating`)
-                    .setEmoji("🟡")
+                    .setEmoji(updatingEmojiComp)
             );
         }
         if (m.status !== "offline") {
             statusOptions.push(
                 new StringSelectMenuOptionBuilder()
-                    .setLabel(`🔴 ปิดปรับปรุง: ${m.name}`.slice(0, 100))
+                    .setLabel(`ปิดปรับปรุง: ${m.name}`.slice(0, 100))
                     .setDescription(`สลับเป็นสถานะ ปิดปรับปรุง`)
                     .setValue(`${m.id}__offline`)
-                    .setEmoji("🔴")
+                    .setEmoji(offlineEmojiComp)
             );
         }
     }
@@ -606,6 +724,25 @@ const supportedSlashCommand = new SlashCommandBuilder()
     .addSubcommand(sub =>
         sub.setName("panel")
             .setDescription("[ 🎛️ ] เปิดแผงควบคุมหลังบ้านแบบ Interactive พร้อมเมนู 1 คลิกสลับสถานะ")
+    )
+    .addSubcommand(sub =>
+        sub.setName("emoji")
+            .setDescription("[ ✨ ] ตั้งค่าอีโมจิเคลื่อนไหวสำหรับสถานะ (Online / Offline / Updating)")
+            .addStringOption(o =>
+                o.setName("status")
+                    .setDescription("เลือกสถานะที่ต้องการเปลี่ยนอีโมจิ")
+                    .setRequired(true)
+                    .addChoices(
+                        { name: "🟢 ใช้งานได้ปกติ (Online)", value: "online" },
+                        { name: "🔴 ปิดปรับปรุง (Offline)", value: "offline" },
+                        { name: "🟡 กำลังอัปเดต (Updating)", value: "updating" }
+                    )
+            )
+            .addStringOption(o =>
+                o.setName("emoji")
+                    .setDescription("ใส่อีโมจิเคลื่อนไหว เช่น <a:online:123> หรือ :online:")
+                    .setRequired(true)
+            )
     );
 
 /**
@@ -618,6 +755,23 @@ async function handleSupportedCommand(interaction) {
 
     const sub = interaction.options.getSubcommand();
     const data = loadSupportedData();
+
+    if (sub === "emoji") {
+        const targetStatus = interaction.options.getString("status");
+        const rawEmoji = interaction.options.getString("emoji").trim();
+
+        await interaction.deferReply({ ephemeral: true });
+        data.emojis ??= {};
+
+        const resolved = resolveCustomEmojiInput(rawEmoji, interaction.guild) || rawEmoji;
+        data.emojis[targetStatus] = resolved;
+        saveSupportedData(data);
+
+        const updated = await updateAllSupportedPanels(interaction.client);
+        return interaction.editReply({
+            content: `✅ **ตั้งค่าอีโมจิสำหรับสถานะ \`${targetStatus}\` สำเร็จ!** ${resolved}\n🔄 ซิงก์แผงข้อความทุกห้องแบบ Realtime: **${updated}** จุด`
+        });
+    }
 
     if (sub === "setup") {
         const dest = interaction.options.getChannel("channel");
@@ -738,5 +892,9 @@ module.exports = {
     handleSupportedAutocomplete,
     handleSupportedCommand,
     supportedSlashCommand,
-    updateAllSupportedPanels
+    updateAllSupportedPanels,
+    autoDetectSupportedEmojis,
+    getMapStatusInfo,
+    parseEmojiForComponent
 };
+
