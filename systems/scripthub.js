@@ -25,13 +25,39 @@ const PANELS_FILE = path.join(DATA_DIR, "scripthub_panels.json");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(ASSETS_DIR)) fs.mkdirSync(ASSETS_DIR, { recursive: true });
 
+// เอฟเฟคเคลื่อนไหว (Animated Emojis ประจำบ็อต)
+const ANIMATED = {
+    glitch: "<a:312312:1570844178684846211>",
+    leftWing: "<a:633625leftangleallwhitewing:1569102297487773696>",
+    rightWing: "<a:602393rightangleallwhitewing:1569102295738884217>",
+    arrow: "<a:998057pinkarrow:1569102319105089637>",
+    sparkle: "<a:2659tadapurple:1569102206798397571>",
+    coin: "<a:933416goldenspincoin:1569102317305860226>",
+    catPaw: "<a:785173catpaw:1569102307155779649>",
+    redCard: "<a:22247redcard:1569102233981685840>",
+    fire: "<a:1310107692995706900:1570844182317113364>"
+};
+
+function setOptionEmoji(opt, emojiStr) {
+    if (!emojiStr) return opt.setEmoji("🎮");
+    const mAnim = emojiStr.match(/<a:([^:]+):(\d+)>/);
+    if (mAnim) return opt.setEmoji({ name: mAnim[1], id: mAnim[2], animated: true });
+    const mStatic = emojiStr.match(/<:([^:]+):(\d+)>/);
+    if (mStatic) return opt.setEmoji({ name: mStatic[1], id: mStatic[2], animated: false });
+    try {
+        return opt.setEmoji(emojiStr);
+    } catch {
+        return opt.setEmoji("🎮");
+    }
+}
+
 // ข้อมูลแมพเริ่มต้น (ใช้เป็นฐานข้อมูลเริ่มต้นเมื่อยังไม่มีไฟล์)
 const DEFAULT_MAPS = {
     mahanakhon: {
         id: "mahanakhon",
         name: "MAHANAKHON RACING",
         title: "แมพ MAHANAKHON RACING",
-        emoji: "🏎️",
+        emoji: "<a:933416goldenspincoin:1569102317305860226>",
         description: "สคริปต์แมพมหานคร เรซซิ่ง (ออโต้ฟาร์ม, จูนรถ, วาร์ปส่งของ)",
         imagePath: path.join(ASSETS_DIR, "mahanakhon_cover.jpg"),
         imageUrl: null,
@@ -41,7 +67,7 @@ const DEFAULT_MAPS = {
         id: "sailueat",
         name: "SAI LUEAT ARCHIWA",
         title: "แมพ SAI LUEAT ARCHIWA (สายเลือดอาชีวะ)",
-        emoji: "🥊",
+        emoji: "<a:22247redcard:1569102233981685840>",
         description: "สคริปต์แมพสายเลือดอาชีวะ (Aimbot, Hitbox, Silent Aim, Auto Farm)",
         imagePath: path.join(ASSETS_DIR, "krakenhub_hub.jpg"),
         imageUrl: null,
@@ -51,7 +77,7 @@ const DEFAULT_MAPS = {
         id: "voxel",
         name: "VOXEL WARS",
         title: "แมพ VOXEL WARS",
-        emoji: "🔫",
+        emoji: "<a:312312:1570844178684846211>",
         description: "สคริปต์แมพว็อกเซล วอร์ส (Silent Aim, ESP, God Mode)",
         imagePath: path.join(ASSETS_DIR, "krakenhub_hub.jpg"),
         imageUrl: null,
@@ -139,6 +165,7 @@ async function updateAllLivePanels(client) {
             if (p.mode === "hub") {
                 const hub = makeHubPanel(maps);
                 await msg.edit({
+                    content: null, // ลบข้อความตัวหนังสือนอก Embed ที่ซ้ำซ้อนออกถาวร
                     embeds: hub.embeds,
                     files: hub.files,
                     components: hub.components
@@ -148,6 +175,7 @@ async function updateAllLivePanels(client) {
             } else if (maps[p.mode]) {
                 const panel = makeMapDeliveryPanel(p.mode, false);
                 await msg.edit({
+                    content: null,
                     embeds: panel.embeds,
                     files: panel.files,
                     components: panel.components
@@ -178,7 +206,7 @@ async function downloadAndSaveImage(url, destPath) {
 }
 
 /**
- * 1. แผงเลือกแมพหลัก: KRAKEN HUB SCRIPT COLLECTION + Dropdown Menu (ขอบแดง)
+ * 1. แผงเลือกแมพหลัก: KRAKEN HUB SCRIPT COLLECTION + Dropdown Menu (ขอบแดง + เอฟเฟคเคลื่อนไหว)
  */
 function makeHubPanel(maps = null) {
     maps ??= loadMaps();
@@ -188,13 +216,14 @@ function makeHubPanel(maps = null) {
         .setCustomId("scripthub_select_map")
         .setPlaceholder("🔍 แตะที่นี่เพื่อเลื่อนเลือกแมพ...")
         .addOptions(
-            mapList.map(m =>
-                new StringSelectMenuOptionBuilder()
+            mapList.map(m => {
+                const opt = new StringSelectMenuOptionBuilder()
                     .setLabel((m.name || m.id).slice(0, 100))
                     .setDescription((m.description || `สคริปต์แมพ ${m.name || m.id}`).slice(0, 100))
-                    .setValue(m.id)
-                    .setEmoji(m.emoji || "🎮")
-            )
+                    .setValue(m.id);
+                setOptionEmoji(opt, m.emoji || ANIMATED.glitch);
+                return opt;
+            })
         );
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
@@ -202,8 +231,8 @@ function makeHubPanel(maps = null) {
     const resetRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId("scripthub_reset_menu")
-            .setLabel("รีเซ็ตเมนู / ย้อนกลับ")
-            .setEmoji("🔄")
+            .setLabel("รีเซ็ตเมนู / ล้างการเลือก")
+            .setEmoji(ANIMATED.glitch)
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -211,8 +240,8 @@ function makeHubPanel(maps = null) {
     const files = [];
     const embed = new EmbedBuilder()
         .setColor(0xED4245) // ขอบ Embed สีแดง
-        .setTitle("🔴 KRAKEN HUB | SCRIPT COLLECTION")
-        .setDescription("กรุณาเลื่อนเลือกแมพที่ต้องการรับสคริปต์ด้านล่างนี้:");
+        .setTitle(`${ANIMATED.leftWing} KRAKEN HUB | SCRIPT COLLECTION ${ANIMATED.rightWing}`)
+        .setDescription(`${ANIMATED.arrow} **กรุณาเลื่อนเลือกแมพที่ต้องการรับสคริปต์ด้านล่างนี้:**`);
 
     if (fs.existsSync(hubImagePath)) {
         files.push(new AttachmentBuilder(hubImagePath, { name: "hub.jpg" }));
@@ -220,6 +249,7 @@ function makeHubPanel(maps = null) {
     }
 
     return {
+        content: null, // ป้องกันข้อความซ้ำซ้อนเหนือ Embed
         embeds: [embed],
         files: files,
         components: [row, resetRow]
@@ -227,7 +257,7 @@ function makeHubPanel(maps = null) {
 }
 
 /**
- * 2. หน้ารับสคริปต์ของแต่ละแมพ: ข้อความตัวใหญ่ + ปกรูปเกม + ปุ่มคัดลอก (ขอบแดง)
+ * 2. หน้ารับสคริปต์ของแต่ละแมพ: ข้อความตัวใหญ่ + ปกรูปเกม + ปุ่มคัดลอก (ขอบแดง + เอฟเฟคเคลื่อนไหว)
  */
 function makeMapDeliveryPanel(mapId, showBackBtn = true) {
     const maps = loadMaps();
@@ -238,7 +268,7 @@ function makeMapDeliveryPanel(mapId, showBackBtn = true) {
         new ButtonBuilder()
             .setCustomId(`scripthub_copy_${map.id}`)
             .setLabel("คัดลอกสคริปต์")
-            .setEmoji("📋")
+            .setEmoji(ANIMATED.coin)
             .setStyle(ButtonStyle.Primary)
     ];
 
@@ -247,7 +277,7 @@ function makeMapDeliveryPanel(mapId, showBackBtn = true) {
             new ButtonBuilder()
                 .setCustomId("scripthub_back_to_hub")
                 .setLabel("ย้อนกลับ / เลือกแมพอื่น")
-                .setEmoji("🔙")
+                .setEmoji(ANIMATED.arrow)
                 .setStyle(ButtonStyle.Secondary)
         );
     }
@@ -256,7 +286,8 @@ function makeMapDeliveryPanel(mapId, showBackBtn = true) {
 
     const embed = new EmbedBuilder()
         .setColor(0xED4245) // ขอบ Embed สีแดง
-        .setTitle(map.title || `แมพ ${map.name || map.id}`);
+        .setTitle(`${ANIMATED.leftWing} ${map.title || "แมพ " + (map.name || map.id)} ${ANIMATED.rightWing}`)
+        .setDescription(`${ANIMATED.arrow} **กดปุ่มด้านล่างเพื่อคัดลอกโค้ดสคริปต์ไปใช้งานได้ทันที:**`);
 
     const files = [];
 
@@ -275,6 +306,7 @@ function makeMapDeliveryPanel(mapId, showBackBtn = true) {
     }
 
     return {
+        content: null,
         embeds: [embed],
         files: files,
         components: [row]
@@ -289,17 +321,17 @@ function makeAdminDashboard(maps = null) {
 
     const embed = new EmbedBuilder()
         .setColor(0xED4245)
-        .setTitle("🏎️ KRAKENHUB | แผงควบคุมระบบแจกสคริปต์ (Realtime Sync)")
+        .setTitle(`${ANIMATED.glitch} KRAKENHUB | แผงควบคุมระบบแจกสคริปต์ (Realtime Sync)`)
         .setDescription(
-            "ศูนย์ควบคุมระบบแจกสคริปต์และแก้ไขข้อมูลแมพแบบเรียลไทม์\n" +
-            "ทุกการแก้ไขจะถูกเซฟและอัปเดตลงแผงในห้อง Discord ทันทีโดยไม่ต้องรีบ็อต:"
+            `${ANIMATED.arrow} ศูนย์ควบคุมระบบแจกสคริปต์และแก้ไขข้อมูลแมพแบบเรียลไทม์\n` +
+            `ทุกการแก้ไขจะถูกเซฟและอัปเดตลงแผงในห้อง Discord ทันทีโดยไม่ต้องรีบ็อต:`
         )
         .setTimestamp();
 
     for (const [id, m] of Object.entries(maps)) {
         const hasImg = (m.imagePath && fs.existsSync(m.imagePath)) || m.imageUrl;
         embed.addFields({
-            name: `${m.emoji || "🎮"} ${m.name || id} (\`ID: ${id}\`)`,
+            name: `${m.emoji || ANIMATED.glitch} ${m.name || id} (\`ID: ${id}\`)`,
             value: `• **หัวข้อ:** ${m.title || m.name || id}\n• **คำอธิบาย:** ${m.description || "-"}\n• **รูปปก:** ${hasImg ? "✅ มีรูปปก" : "❌ ไม่มีรูป"}\n• **โค้ดสคริปต์:** \`${(m.script || "").slice(0, 50)}...\``,
             inline: false
         });
@@ -309,12 +341,12 @@ function makeAdminDashboard(maps = null) {
         new ButtonBuilder()
             .setCustomId("scripthub_admin_send_hub")
             .setLabel("ส่งแผงเลือกแมพรวม (Hub)")
-            .setEmoji("📨")
+            .setEmoji(ANIMATED.glitch)
             .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
             .setCustomId("scripthub_admin_send_mhnk")
             .setLabel("ส่งโพสต์แมพ Mahanakhon")
-            .setEmoji("🏎️")
+            .setEmoji(ANIMATED.coin)
             .setStyle(ButtonStyle.Primary)
     );
 
@@ -322,22 +354,22 @@ function makeAdminDashboard(maps = null) {
         new ButtonBuilder()
             .setCustomId("scripthub_admin_open_add")
             .setLabel("เพิ่มแมพใหม่")
-            .setEmoji("➕")
+            .setEmoji(ANIMATED.sparkle)
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId("scripthub_admin_open_edit")
             .setLabel("แก้ไขสคริปต์")
-            .setEmoji("✏️")
+            .setEmoji(ANIMATED.arrow)
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId("scripthub_admin_open_desc")
             .setLabel("แก้ไขคำอธิบาย")
-            .setEmoji("📝")
+            .setEmoji(ANIMATED.catPaw)
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId("scripthub_admin_refresh")
             .setLabel("รีเฟรช")
-            .setEmoji("🔄")
+            .setEmoji(ANIMATED.glitch)
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -397,6 +429,7 @@ async function handleScriptHubInteraction(interaction) {
         const isEphemeral = interaction.message?.flags?.has(MessageFlags.Ephemeral) || Boolean(interaction.message?.flags?.bitfield & 64);
         if (isEphemeral) {
             return interaction.update({
+                content: null,
                 embeds: panel.embeds,
                 files: panel.files,
                 attachments: [],
@@ -406,6 +439,7 @@ async function handleScriptHubInteraction(interaction) {
 
         // กรณีเลือกจากแผงหลักในห้อง: ตอบกลับส่วนตัว (Ephemeral) ให้เฉพาะคนที่กดเห็น
         await interaction.reply({
+            content: null,
             embeds: panel.embeds,
             files: panel.files,
             components: panel.components,
@@ -418,6 +452,7 @@ async function handleScriptHubInteraction(interaction) {
             try {
                 const hub = makeHubPanel();
                 await interaction.message.edit({
+                    content: null,
                     embeds: hub.embeds,
                     components: hub.components
                 });
@@ -432,6 +467,7 @@ async function handleScriptHubInteraction(interaction) {
     if (interaction.isButton() && interaction.customId === "scripthub_reset_menu") {
         const hubPanel = makeHubPanel();
         return interaction.update({
+            content: null,
             embeds: hubPanel.embeds,
             files: hubPanel.files,
             attachments: [],
@@ -450,7 +486,7 @@ async function handleScriptHubInteraction(interaction) {
         }
 
         return interaction.reply({
-            content: map.script,
+            content: `${ANIMATED.sparkle} **คัดลอกโค้ดสคริปต์ ${map.name} สำเร็จ!** ${ANIMATED.glitch}\n${ANIMATED.arrow} *นำโค้ดด้านล่างนี้ไปวางในตัวรันเกม Roblox ได้ทันที:*\n\`\`\`lua\n${map.script}\n\`\`\``,
             ephemeral: true
         });
     }
@@ -459,6 +495,7 @@ async function handleScriptHubInteraction(interaction) {
     if (interaction.isButton() && interaction.customId === "scripthub_back_to_hub") {
         const hubPanel = makeHubPanel();
         return interaction.update({
+            content: null,
             embeds: hubPanel.embeds,
             files: hubPanel.files,
             attachments: [],
@@ -474,12 +511,13 @@ async function handleScriptHubInteraction(interaction) {
         }
         const hubPanel = makeHubPanel();
         const msg = await interaction.channel.send({
+            content: null,
             embeds: hubPanel.embeds,
             files: hubPanel.files,
             components: hubPanel.components
         });
         registerPanel(interaction.channelId, msg.id, "hub");
-        return interaction.reply({ content: "✅ ส่งแผงเลือกแมพรวมลงในห้องนี้และลงทะเบียนซิงก์ Realtime เรียบร้อยแล้ว!", ephemeral: true });
+        return interaction.reply({ content: `✅ ส่งแผงเลือกแมพรวมลงในห้องนี้และลงทะเบียนซิงก์ Realtime เรียบร้อยแล้ว! ${ANIMATED.glitch}`, ephemeral: true });
     }
 
     if (interaction.isButton() && interaction.customId === "scripthub_admin_send_mhnk") {
@@ -488,12 +526,13 @@ async function handleScriptHubInteraction(interaction) {
         }
         const panel = makeMapDeliveryPanel("mahanakhon", false);
         const msg = await interaction.channel.send({
+            content: null,
             embeds: panel.embeds,
             files: panel.files,
             components: panel.components
         });
         registerPanel(interaction.channelId, msg.id, "mahanakhon");
-        return interaction.reply({ content: "✅ ส่งโพสต์แจกสคริปต์แมพ MAHANAKHON RACING เรียบร้อยแล้ว!", ephemeral: true });
+        return interaction.reply({ content: `✅ ส่งโพสต์แจกสคริปต์แมพ MAHANAKHON RACING เรียบร้อยแล้ว! ${ANIMATED.coin}`, ephemeral: true });
     }
 
     if (interaction.isButton() && interaction.customId === "scripthub_admin_refresh") {
@@ -802,13 +841,14 @@ async function handleScriptHubCommand(interaction) {
             if (mode === "hub") {
                 const hubPanel = makeHubPanel(maps);
                 const msg = await dest.send({
+                    content: null,
                     embeds: hubPanel.embeds,
                     files: hubPanel.files,
                     components: hubPanel.components
                 });
                 registerPanel(dest.id, msg.id, "hub");
                 return interaction.editReply({
-                    content: `✅ ส่งแผงเลือกแมพรวม **KrakenHub Script Collection** ไปยังห้อง <#${dest.id}> เรียบร้อยแล้ว!\n*(ระบบเชื่อมโยง Realtime Live Update พร้อมใช้งาน)*`
+                    content: `✅ ส่งแผงเลือกแมพรวม **KrakenHub Script Collection** ไปยังห้อง <#${dest.id}> เรียบร้อยแล้ว! ${ANIMATED.glitch}\n*(ระบบเชื่อมโยง Realtime Live Update พร้อมใช้งาน)*`
                 });
             } else {
                 const panel = makeMapDeliveryPanel(mode, false);
@@ -816,13 +856,14 @@ async function handleScriptHubCommand(interaction) {
                     return interaction.editReply({ content: `❌ ไม่พบแมพ \`${mode}\` ในระบบ` });
                 }
                 const msg = await dest.send({
+                    content: null,
                     embeds: panel.embeds,
                     files: panel.files,
                     components: panel.components
                 });
                 registerPanel(dest.id, msg.id, mode);
                 return interaction.editReply({
-                    content: `✅ ส่งโพสต์แจกสคริปต์แมพ **${mode.toUpperCase()}** ไปยังห้อง <#${dest.id}> เรียบร้อยแล้ว!`
+                    content: `✅ ส่งโพสต์แจกสคริปต์แมพ **${mode.toUpperCase()}** ไปยังห้อง <#${dest.id}> เรียบร้อยแล้ว! ${ANIMATED.coin}`
                 });
             }
         } catch (err) {
