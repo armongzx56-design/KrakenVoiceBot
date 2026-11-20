@@ -168,6 +168,12 @@ function saveConfig(c) {
 
 const config = loadConfig();
 
+const {
+    scripthubSlashCommand,
+    handleScriptHubCommand,
+    handleScriptHubInteraction
+} = require("./systems/scripthub");
+
 const commands = [
     new SlashCommandBuilder()
         .setName("help")
@@ -311,6 +317,7 @@ const commands = [
                 { name: "📢 แท็ก @everyone", value: "everyone" }
             ))
         .addStringOption(o => o.setName("image").setDescription("ลิงก์รูปภาพ Banner ใน Embed (ถ้ามี)").setRequired(false)),
+    scripthubSlashCommand,
 ].map(command => {
     command.setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator);
     return command.toJSON();
@@ -1031,6 +1038,12 @@ const {
 } = require("./systems/vrBadge");
 
 client.on("interactionCreate", async interaction => {
+    // ScriptHub interactions (Select Menu & Buttons)
+    if ((interaction.isStringSelectMenu() && interaction.customId.startsWith("scripthub_")) ||
+        (interaction.isButton() && interaction.customId.startsWith("scripthub_"))) {
+        return handleScriptHubInteraction(interaction);
+    }
+
     // Whitelist buttons and modals
     if ((interaction.isButton() && interaction.customId.startsWith("wl_")) ||
         (interaction.isModalSubmit() && interaction.customId.startsWith("wl_"))) {
@@ -1080,6 +1093,10 @@ client.on("interactionCreate", async interaction => {
 
     if (!interaction.guild || !isGuildAllowed(interaction.guild.id)) {
         return interaction.reply({ content: "❌ KrakenHub ยังไม่ได้เปิดใช้งานในเซิร์ฟเวอร์นี้", ephemeral: true });
+    }
+
+    if (interaction.commandName === "scripthub") {
+        return handleScriptHubCommand(interaction);
     }
 
     if (interaction.commandName === "mod") {

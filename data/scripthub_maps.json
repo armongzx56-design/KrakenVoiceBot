@@ -1,0 +1,32 @@
+{
+  "mahanakhon": {
+    "id": "mahanakhon",
+    "name": "MAHANAKHON RACING",
+    "title": "แมพ MAHANAKHON RACING",
+    "emoji": "🏎️",
+    "description": "สคริปต์แมพมหานคร เรซซิ่ง (ออโต้ฟาร์ม, จูนรถ, วาร์ปส่งของ)",
+    "imagePath": "D:\\roblox-script\\KrakenVoiceBot\\assets\\mahanakhon_cover.jpg",
+    "imageUrl": null,
+    "script": "loadstring(game:HttpGet(\"https://gist.githubusercontent.com/MacHub09/76ea573e3e472a8854d4f2dea5944d01/raw/c2175ee3808e846c9baa6c96c5e2a19a2b7e194b/Loaders\"))()"
+  },
+  "sailueat": {
+    "id": "sailueat",
+    "name": "SAI LUEAT ARCHIWA",
+    "title": "แมพ SAI LUEAT ARCHIWA (สายเลือดอาชีวะ)",
+    "emoji": "🥊",
+    "description": "สคริปต์แมพสายเลือดอาชีวะ (Aimbot, Hitbox, Silent Aim, Auto Farm)",
+    "imagePath": "D:\\roblox-script\\KrakenVoiceBot\\assets\\krakenhub_hub.jpg",
+    "imageUrl": null,
+    "script": "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/KrakenHub/sailueat/main/loader.lua\"))()"
+  },
+  "voxel": {
+    "id": "voxel",
+    "name": "VOXEL WARS",
+    "title": "แมพ VOXEL WARS",
+    "emoji": "🔫",
+    "description": "สคริปต์แมพว็อกเซล วอร์ส (Silent Aim, ESP, God Mode)",
+    "imagePath": "D:\\roblox-script\\KrakenVoiceBot\\assets\\krakenhub_hub.jpg",
+    "imageUrl": null,
+    "script": "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/KrakenHub/voxel/main/loader.lua\"))()"
+  }
+}
