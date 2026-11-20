@@ -216,20 +216,22 @@ function makeAdminDashboard(maps = null) {
  * 4. ตัวประมวลผล Interaction สำหรับ ScriptHub (Select Menu, Buttons & Modals)
  */
 async function handleScriptHubInteraction(interaction) {
-    // 4.1 สมาชิกเลือกแมพจาก Dropdown Menu -> เปลี่ยนเป็นรูปที่ 2
+    // 4.1 สมาชิกเลือกแมพจาก Dropdown Menu -> ส่งหน้ารับสคริปต์แบบ Ephemeral (เห็นเฉพาะคนที่กดคนเดียว 100%)
     if (interaction.isStringSelectMenu() && interaction.customId === "scripthub_select_map") {
         const selectedId = interaction.values[0];
-        const panel = makeMapDeliveryPanel(selectedId, true);
+        const panel = makeMapDeliveryPanel(selectedId, false);
 
         if (!panel) {
             return interaction.reply({ content: "❌ ไม่พบข้อมูลแมพที่เลือก", ephemeral: true });
         }
 
-        return interaction.update({
+        // ส่งแบบ ephemeral: true เพื่อให้เห็นเฉพาะคนที่กดคนเดียว ไม่แย่งกันในห้องส่วนรวม
+        return interaction.reply({
             content: panel.content,
             files: panel.files,
-            components: panel.components
-        }).catch(err => console.error("[SCRIPTHUB UPDATE ERR]", err.message));
+            components: panel.components,
+            ephemeral: true
+        }).catch(err => console.error("[SCRIPTHUB EPHEMERAL REPLY ERR]", err.message));
     }
 
     // 4.2 สมาชิกกดปุ่ม "คัดลอกสคริปต์"
