@@ -120,8 +120,14 @@ function makeHubPanel(maps = null) {
         files.push(new AttachmentBuilder(hubImagePath, { name: "hub.jpg" }));
     }
 
+    const embed = new EmbedBuilder()
+        .setColor(0xED4245) // ขอบ Embed สีแดง
+        .setTitle("🔴 KRAKEN HUB | SCRIPT COLLECTION")
+        .setDescription("กรุณาเลื่อนเลือกแมพที่ต้องการรับสคริปต์ด้านล่างนี้:")
+        .setImage("attachment://hub.jpg");
+
     return {
-        content: "# 🔴 KRAKEN HUB | SCRIPT COLLECTION\n*กรุณาเลื่อนเลือกแมพที่ต้องการรับสคริปต์ด้านล่างนี้*",
+        embeds: [embed],
         files: files,
         components: [row]
     };
@@ -165,8 +171,18 @@ function makeMapDeliveryPanel(mapId, showBackBtn = false) {
         }
     }
 
+    const embed = new EmbedBuilder()
+        .setColor(0xED4245) // ขอบ Embed สีแดง
+        .setTitle(map.title || `แมพ ${map.name}`);
+
+    if (map.imageUrl) {
+        embed.setImage(map.imageUrl);
+    } else if (files.length > 0) {
+        embed.setImage("attachment://cover.jpg");
+    }
+
     return {
-        content: `# ${map.title || `แมพ ${map.name}`}`,
+        embeds: [embed],
         files: files,
         components: [row]
     };
@@ -244,7 +260,7 @@ async function handleScriptHubInteraction(interaction) {
         }
 
         return interaction.reply({
-            content: panel.content,
+            embeds: panel.embeds,
             files: panel.files,
             components: panel.components,
             ephemeral: true
@@ -271,7 +287,7 @@ async function handleScriptHubInteraction(interaction) {
     if (interaction.isButton() && interaction.customId === "scripthub_back_to_hub") {
         const hubPanel = makeHubPanel();
         return interaction.update({
-            content: hubPanel.content,
+            embeds: hubPanel.embeds,
             files: hubPanel.files,
             components: hubPanel.components
         }).catch(err => console.error("[SCRIPTHUB BACK ERR]", err.message));
@@ -285,7 +301,7 @@ async function handleScriptHubInteraction(interaction) {
         }
         const hubPanel = makeHubPanel();
         await interaction.channel.send({
-            content: hubPanel.content,
+            embeds: hubPanel.embeds,
             files: hubPanel.files,
             components: hubPanel.components
         });
@@ -298,7 +314,7 @@ async function handleScriptHubInteraction(interaction) {
         }
         const panel = makeMapDeliveryPanel("mahanakhon", false);
         await interaction.channel.send({
-            content: panel.content,
+            embeds: panel.embeds,
             files: panel.files,
             components: panel.components
         });
@@ -536,7 +552,7 @@ async function handleScriptHubCommand(interaction) {
             if (mode === "hub") {
                 const hubPanel = makeHubPanel(maps);
                 await dest.send({
-                    content: hubPanel.content,
+                    embeds: hubPanel.embeds,
                     files: hubPanel.files,
                     components: hubPanel.components
                 });
@@ -549,7 +565,7 @@ async function handleScriptHubCommand(interaction) {
                     return interaction.editReply({ content: `❌ ไม่พบแมพ \`${mode}\` ในระบบ` });
                 }
                 await dest.send({
-                    content: panel.content,
+                    embeds: panel.embeds,
                     files: panel.files,
                     components: panel.components
                 });
