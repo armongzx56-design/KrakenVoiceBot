@@ -76,10 +76,14 @@ const DATA_DIR = path.join(__dirname, "data");
 const CONFIG_FILE = path.join(DATA_DIR, "config.json");
 const AUTOPOST_FILE = path.join(DATA_DIR, "autopost_settings.json");
 const VOICE_FILE = path.join(DATA_DIR, "voice_settings.json");
-const STATUS_FILE = path.join(DATA_DIR, "status_settings.json");
 const ROBLOX_FILE = path.join(DATA_DIR, "roblox_settings.json");
 const SECURITY_FILE = path.join(DATA_DIR, "security_settings.json");
 const TICKET_FILE = path.join(DATA_DIR, "ticket_settings.json");
+
+try {
+    const legacyStatus = path.join(DATA_DIR, "status_settings.json");
+    if (fs.existsSync(legacyStatus)) fs.unlinkSync(legacyStatus);
+} catch {}
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -108,7 +112,6 @@ function loadConfig() {
     let main = safeReadJSON(CONFIG_FILE, {});
     const autoposts = safeReadJSON(AUTOPOST_FILE, {});
     const voices = safeReadJSON(VOICE_FILE, {});
-    const statuses = safeReadJSON(STATUS_FILE, {});
     const robloxes = safeReadJSON(ROBLOX_FILE, {});
     const securities = safeReadJSON(SECURITY_FILE, {});
     const tickets = safeReadJSON(TICKET_FILE, {});
@@ -117,7 +120,6 @@ function loadConfig() {
         ...Object.keys(main),
         ...Object.keys(autoposts),
         ...Object.keys(voices),
-        ...Object.keys(statuses),
         ...Object.keys(robloxes),
         ...Object.keys(securities),
         ...Object.keys(tickets)
@@ -125,9 +127,9 @@ function loadConfig() {
 
     for (const gid of allGuildIds) {
         main[gid] ??= {};
+        delete main[gid].status; // ล้างสถานะค้างเก่าออกถาวร
         if (autoposts[gid]) main[gid].autopost = { ...(main[gid].autopost || {}), ...autoposts[gid] };
         if (voices[gid]) main[gid].voice247 = { ...(main[gid].voice247 || {}), ...voices[gid] };
-        if (statuses[gid]) main[gid].status = { ...(main[gid].status || {}), ...statuses[gid] };
         if (robloxes[gid]) main[gid].roblox = { ...(main[gid].roblox || {}), ...robloxes[gid] };
         if (securities[gid]) main[gid].security = { ...(main[gid].security || {}), ...securities[gid] };
         if (tickets[gid]) main[gid].ticket = { ...(main[gid].ticket || {}), ...tickets[gid] };
@@ -141,15 +143,14 @@ function saveConfig(c) {
     try {
         const autoposts = safeReadJSON(AUTOPOST_FILE, {});
         const voices = safeReadJSON(VOICE_FILE, {});
-        const statuses = safeReadJSON(STATUS_FILE, {});
         const robloxes = safeReadJSON(ROBLOX_FILE, {});
         const securities = safeReadJSON(SECURITY_FILE, {});
         const tickets = safeReadJSON(TICKET_FILE, {});
 
         for (const [gid, gdata] of Object.entries(c)) {
+            delete gdata.status;
             if (gdata.autopost) autoposts[gid] = gdata.autopost;
             if (gdata.voice247) voices[gid] = gdata.voice247;
-            if (gdata.status) statuses[gid] = gdata.status;
             if (gdata.roblox) robloxes[gid] = gdata.roblox;
             if (gdata.security) securities[gid] = gdata.security;
             if (gdata.ticket) tickets[gid] = { ...(tickets[gid] || {}), ...gdata.ticket };
@@ -157,7 +158,6 @@ function saveConfig(c) {
 
         safeWriteJSON(AUTOPOST_FILE, autoposts);
         safeWriteJSON(VOICE_FILE, voices);
-        safeWriteJSON(STATUS_FILE, statuses);
         safeWriteJSON(ROBLOX_FILE, robloxes);
         safeWriteJSON(SECURITY_FILE, securities);
         safeWriteJSON(TICKET_FILE, tickets);
@@ -194,15 +194,6 @@ const commands = [
     new SlashCommandBuilder()
         .setName("stats")
         .setDescription("[ 📈 ] ดูสถานะและสถิติของบอท"),
-    new SlashCommandBuilder()
-        .setName("status").setDescription("[ 🏷️ ] ตั้งสถานะการทำงานของบอท")
-        .addSubcommand(s => s.setName("set").setDescription("[ ✍️ ] ตั้งสถานะ")
-            .addStringOption(o => o.setName("type").setDescription("ประเภท").setRequired(true)
-                .addChoices({name:"Playing",value:"Playing"},{name:"Watching",value:"Watching"},{name:"Listening",value:"Listening"},{name:"Competing",value:"Competing"},{name:"Streaming",value:"Streaming"}))
-            .addStringOption(o => o.setName("text").setDescription("ข้อความ").setRequired(true))
-            .addStringOption(o => o.setName("url").setDescription("ลิงก์ Twitch หรือ YouTube สำหรับสถานะ Streaming").setRequired(false)))
-        .addSubcommand(s => s.setName("clear").setDescription("[ 🗑️ ] ล้างสถานะ"))
-        .addSubcommand(s => s.setName("vr").setDescription("[ 🥽 ] ตรวจสอบสถานะการเชื่อมต่อ VR Gateway (Meta Quest)")),
     new SlashCommandBuilder()
         .setName("ticket").setDescription("[ 🎫 ] ระบบจัดการตั๋วช่วยเหลือ (Ticket)")
         .addSubcommand(s => s.setName("setup").setDescription("[ ⚙️ ] ตั้งค่า Ticket Panel")
@@ -363,8 +354,6 @@ function publishMemberCount(guild, memberCount) {
     if (!guild || guild.id !== PRIMARY_GUILD_ID || !client.user) return;
     const count = Math.max(0, Number(memberCount) || 0);
     trackedMemberCounts.set(guild.id, count);
-    // Keep the configured custom status instead of overwriting it with the member count.
-    if (Object.values(config).some(settings => settings?.status)) return;
     client.user.setActivity(`${count} Members`, {
         type: ActivityType.Watching
     });
@@ -827,15 +816,6 @@ client.once("clientReady", async () => {
     if (memberCountGuild) {
         await refreshMemberActivity(memberCountGuild);
         startMemberCountRefresh(memberCountGuild);
-    }
-    // Restore the saved custom status after startup/member-count initialization.
-    const savedStatus = Object.values(config).map(settings => settings?.status).find(Boolean);
-    if (savedStatus) {
-        const statusTypes = {Playing:ActivityType.Playing,Watching:ActivityType.Watching,Listening:ActivityType.Listening,Competing:ActivityType.Competing,Streaming:ActivityType.Streaming};
-        client.user.setPresence({
-            activities: [{ name: savedStatus.text, type: statusTypes[savedStatus.type] ?? ActivityType.Playing, ...(savedStatus.type === "Streaming" && savedStatus.url ? { url: savedStatus.url } : {}) }],
-            status: "online"
-        });
     }
     connectConfiguredVoices().catch(error => {
         console.log("[VOICE START ERROR]", error.message);
@@ -1499,41 +1479,6 @@ client.on("interactionCreate", async interaction => {
         });
     }
 
-    if (interaction.commandName === "status") {
-        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) return interaction.reply({content:"❌ ต้องมีสิทธิ์ Manage Server",ephemeral:true});
-        const sub = interaction.options.getSubcommand();
-        if (sub === "clear") {
-            for (const settings of Object.values(config)) delete settings.status;
-            saveConfig(config);
-            const primaryGuild = client.guilds.cache.get(PRIMARY_GUILD_ID);
-            if (primaryGuild) await refreshMemberActivity(primaryGuild);
-            else client.user.setActivity(null);
-            return interaction.reply({content:"✅ ล้างสถานะแล้ว",ephemeral:true});
-        }
-        if (sub === "vr") {
-            const props = DefaultWebSocketManagerOptions.identifyProperties;
-            return interaction.reply({
-                content: `🥽 **สถานะ VR Gateway ของบอท (Meta Quest):**\n` +
-                         `• **Device:** \`${props.device}\`\n` +
-                         `• **Browser:** \`${props.browser}\`\n` +
-                         `• **OS:** \`${props.os}\`\n` +
-                         `✨ บอทกำลังออนไลน์ด้วยสถานะ VR แว่นเขียวเรียบร้อยแล้ว`,
-                ephemeral: true
-            });
-        }
-        const type = interaction.options.getString("type",true);
-        const text = interaction.options.getString("text",true);
-        const url = interaction.options.getString("url");
-        const map = {Playing:ActivityType.Playing,Watching:ActivityType.Watching,Listening:ActivityType.Listening,Competing:ActivityType.Competing,Streaming:ActivityType.Streaming};
-        if (type === "Streaming" && (!url || !/^https?:\/\/(www\.)?(twitch\.tv|youtube\.com)\//i.test(url))) {
-            return interaction.reply({content:"❌ โหมด Streaming ต้องใส่ลิงก์ Twitch หรือ YouTube ที่ถูกต้องในช่อง url",ephemeral:true});
-        }
-        client.user.setPresence({activities:[{name:text,type:map[type],...(type === "Streaming" ? {url} : {})}],status:"online"});
-        config[interaction.guild.id] ??= {};
-        config[interaction.guild.id].status = {type,text,...(type === "Streaming" ? {url} : {})};
-        saveConfig(config);
-        return interaction.reply({content:"✅ ตั้งสถานะ " + type + " " + text + " แล้ว" + (type === "Streaming" ? "\n🔗 " + url : ""),ephemeral:true});
-    }
 
     if (interaction.commandName === "setup-verify") {
         if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
