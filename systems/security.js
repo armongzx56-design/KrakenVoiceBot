@@ -106,7 +106,15 @@ function startSecurity(client, config, saveConfig) {
 
     async function handleAntiEveryone(message, isEdit = false) {
         if (!message || !message.guild || !message.author) return false;
-        if (message.author.id === client.user?.id) return false;
+        if (
+            message.author.id === client.user?.id ||
+            message.applicationId === client.user?.id ||
+            message.applicationId === client.application?.id ||
+            message.webhookId === client.user?.id ||
+            message.webhookId === client.application?.id ||
+            message.interaction ||
+            message.interactionMetadata
+        ) return false;
 
         const s = settingsFor(config, message.guild.id);
         if (!s.enabled || s.antiEveryoneBan === false) return false;
@@ -423,6 +431,19 @@ function startSecurity(client, config, saveConfig) {
 
         // 1. WEBHOOK ANTI-SPAM
         if (message.webhookId) {
+            // ยกเว้นข้อความของบอทเอง, ข้อความจาก Interaction Reply (เช่น บอทปิด Ticket, กดปุ่มตอบกลับ) และ Webhook ประจำตัวบอท
+            if (
+                message.author?.id === client.user?.id ||
+                message.applicationId === client.user?.id ||
+                message.applicationId === client.application?.id ||
+                message.webhookId === client.user?.id ||
+                message.webhookId === client.application?.id ||
+                message.interaction ||
+                message.interactionMetadata
+            ) {
+                return;
+            }
+
             const s = settingsFor(config, message.guild.id);
             if (!s.enabled || !s.antiWebhookSpam) return;
 
