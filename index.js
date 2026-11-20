@@ -858,6 +858,19 @@ client.once("clientReady", async () => {
             console.error("[TICKET READY SYNC ERR]", err.message);
         }
     })();
+
+    // Auto-sync ScriptHub live panels across all channels on bot startup
+    setTimeout(async () => {
+        try {
+            const { updateAllLivePanels } = require("./systems/scripthub");
+            const synced = await updateAllLivePanels(client);
+            if (synced > 0) {
+                console.log(`[SCRIPTHUB READY SYNC] Synced ${synced} live panels on startup`);
+            }
+        } catch (err) {
+            console.error("[SCRIPTHUB READY SYNC ERR]", err.message);
+        }
+    }, 4000);
 });
 
 const TICKET_TYPES = {

@@ -2,4 +2,7 @@ node_modules/
 .env
 *.log
 data/*.tmp
+data/scripthub_store.json
+data/scripthub_panels.json
+data/scripthub_store_panels.json
 

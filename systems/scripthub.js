@@ -21,9 +21,48 @@ const DATA_DIR = path.join(__dirname, "..", "data");
 const ASSETS_DIR = path.join(__dirname, "..", "assets");
 const MAPS_FILE = path.join(DATA_DIR, "scripthub_maps.json");
 const PANELS_FILE = path.join(DATA_DIR, "scripthub_panels.json");
+// ไฟล์เซฟถาวรเฉพาะตัวเครื่อง ไม่ถูก Git Pull หรือ Git Reset ทับเด็ดขาด
+const USER_STORE_FILE = path.join(DATA_DIR, "scripthub_store.json");
+const USER_PANELS_FILE = path.join(DATA_DIR, "scripthub_store_panels.json");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(ASSETS_DIR)) fs.mkdirSync(ASSETS_DIR, { recursive: true });
+
+function safeReadJSON(filepath, def = null) {
+    try {
+        if (fs.existsSync(filepath)) {
+            const raw = fs.readFileSync(filepath, "utf8");
+            return JSON.parse(raw);
+        }
+    } catch (e) {
+        console.error(`[SCRIPTHUB READ ERR ${path.basename(filepath)}]`, e.message);
+    }
+    return def;
+}
+
+function safeWriteJSON(filepath, data) {
+    try {
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        const tmp = filepath + ".tmp";
+        fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+        fs.renameSync(tmp, filepath);
+    } catch (e) {
+        try { fs.writeFileSync(filepath, JSON.stringify(data, null, 2), "utf8"); }
+        catch (err) { console.error(`[SCRIPTHUB WRITE ERR ${path.basename(filepath)}]`, err.message); }
+    }
+}
+
+/**
+ * แปลง path รูปภาพให้รองรับทุก OS และทุก Drive ป้องกันรูปหายเวลารีสตาร์ตหรือย้ายเครื่อง
+ */
+function resolveImagePath(rawPath) {
+    if (!rawPath) return null;
+    if (fs.existsSync(rawPath)) return rawPath;
+    const base = path.basename(rawPath);
+    const inAssets = path.join(ASSETS_DIR, base);
+    if (fs.existsSync(inAssets)) return inAssets;
+    return rawPath;
+}
 
 // เอฟเฟคเคลื่อนไหว (Animated Emojis ประจำบ็อต)
 const ANIMATED = {
@@ -88,51 +127,47 @@ const DEFAULT_MAPS = {
 let cachedMaps = null;
 
 function loadMaps() {
-    try {
-        if (!fs.existsSync(MAPS_FILE)) {
-            fs.writeFileSync(MAPS_FILE, JSON.stringify(DEFAULT_MAPS, null, 2), "utf8");
-            cachedMaps = JSON.parse(JSON.stringify(DEFAULT_MAPS));
-            return cachedMaps;
-        }
-        const raw = fs.readFileSync(MAPS_FILE, "utf8");
-        const data = JSON.parse(raw);
-        if (data && typeof data === "object" && Object.keys(data).length > 0) {
-            cachedMaps = data;
-            return cachedMaps;
-        }
-        cachedMaps = JSON.parse(JSON.stringify(DEFAULT_MAPS));
-        return cachedMaps;
-    } catch (e) {
-        console.error("[SCRIPTHUB LOAD MAPS ERR]", e.message);
-        return cachedMaps || JSON.parse(JSON.stringify(DEFAULT_MAPS));
+    // 1. อ่านจาก USER_STORE_FILE ก่อนเสมอ (ไม่โดน git ทับเด็ดขาด)
+    let data = safeReadJSON(USER_STORE_FILE, null);
+    if (!data || typeof data !== "object" || Object.keys(data).length === 0) {
+        // 2. ถ้ายังไม่มี ให้ลองอ่านจาก MAPS_FILE
+        data = safeReadJSON(MAPS_FILE, null);
     }
+    if (!data || typeof data !== "object" || Object.keys(data).length === 0) {
+        // 3. ถ้าไม่มีทั้งคู่ จึงใช้ DEFAULT_MAPS
+        data = JSON.parse(JSON.stringify(DEFAULT_MAPS));
+    }
+
+    // แปลง imagePath ให้เป็น Universal Path อัตโนมัติ
+    for (const [id, m] of Object.entries(data)) {
+        if (m.imagePath) {
+            m.imagePath = resolveImagePath(m.imagePath);
+        }
+    }
+
+    cachedMaps = data;
+    return cachedMaps;
 }
 
 function saveMaps(maps) {
-    try {
-        cachedMaps = maps;
-        fs.writeFileSync(MAPS_FILE, JSON.stringify(maps, null, 2), "utf8");
-    } catch (e) {
-        console.error("[SCRIPTHUB SAVE MAPS ERR]", e.message);
-    }
+    cachedMaps = maps;
+    // เซฟลงทั้ง USER_STORE_FILE (ไม่โดน git pull ทับ) และ MAPS_FILE
+    safeWriteJSON(USER_STORE_FILE, maps);
+    safeWriteJSON(MAPS_FILE, maps);
 }
 
 // ระบบจดจำข้อความที่ส่งไปในห้องดิสคอร์ด เพื่ออัปเดตแบบ Realtime
 function loadPanels() {
-    try {
-        if (!fs.existsSync(PANELS_FILE)) return [];
-        return JSON.parse(fs.readFileSync(PANELS_FILE, "utf8")) || [];
-    } catch {
-        return [];
+    let panels = safeReadJSON(USER_PANELS_FILE, null);
+    if (!panels || !Array.isArray(panels) || panels.length === 0) {
+        panels = safeReadJSON(PANELS_FILE, []);
     }
+    return Array.isArray(panels) ? panels : [];
 }
 
 function savePanels(panels) {
-    try {
-        fs.writeFileSync(PANELS_FILE, JSON.stringify(panels, null, 2), "utf8");
-    } catch (e) {
-        console.error("[SCRIPTHUB SAVE PANELS ERR]", e.message);
-    }
+    safeWriteJSON(USER_PANELS_FILE, panels);
+    safeWriteJSON(PANELS_FILE, panels);
 }
 
 function registerPanel(channelId, messageId, mode) {
