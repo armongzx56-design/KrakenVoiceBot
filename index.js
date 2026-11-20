@@ -15,7 +15,8 @@ const {
     StringSelectMenuBuilder,
     PermissionsBitField,
     WebhookClient,
-    DefaultWebSocketManagerOptions
+    DefaultWebSocketManagerOptions,
+    Partials
 } = require("discord.js");
 
 // Discord VR Status Identification (Meta Quest / VR Headset Badge)
@@ -46,6 +47,11 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildInvites
+    ],
+    partials: [
+        Partials.Message,
+        Partials.Channel,
+        Partials.Reaction
     ],
     ws: {
         properties: {
@@ -308,6 +314,8 @@ const commands = [
             .addBooleanOption(o => o.setName("block_mass_mentions").setDescription("บล็อก Webhook ที่แท็ก @everyone/@here").setRequired(false)))
         .addSubcommand(s => s.setName("antieveryone").setDescription("[ 🔨 ] ตั้งค่าระบบแบนคนแท็ก @everyone (สงวนสิทธิ์เฉพาะหัวดิส)")
             .addBooleanOption(o => o.setName("enabled").setDescription("เปิด/ปิดระบบแบนคนแท็ก @everyone").setRequired(true)))
+        .addSubcommand(s => s.setName("antilink").setDescription("[ 🔗 ] ตั้งค่าระบบป้องกันการส่งลิงก์ Discord / คำเชิญเซิร์ฟเวอร์")
+            .addBooleanOption(o => o.setName("enabled").setDescription("เปิด/ปิดระบบลบลิงก์ Discord อัตโนมัติ").setRequired(true)))
         .addSubcommand(s => s.setName("log").setDescription("[ 📜 ] ตั้งค่าห้องสำหรับบันทึก Security Logs")
             .addChannelOption(o => o.setName("channel").setDescription("เลือกห้อง Log").addChannelTypes(ChannelType.GuildText).setRequired(true)))
         .addSubcommand(s => s.setName("test").setDescription("[ 🧪 ] ทดสอบส่ง Log ความปลอดภัย")),
@@ -1122,6 +1130,7 @@ client.on("interactionCreate", async interaction => {
                 .addFields(
                     { name: "🛡️ ระบบรวม", value: s.enabled ? "🟢 เปิดใช้งาน" : "🔴 ปิด", inline: true },
                     { name: "🔨 Anti-Everyone Ban", value: s.antiEveryoneBan !== false ? "🟢 เปิดใช้งาน (ยกเว้นหัวดิส)" : "🔴 ปิด", inline: true },
+                    { name: "🔗 Anti-Discord Link", value: s.antiDiscordLink !== false ? "🟢 เปิดใช้งาน (ลบลิงก์ดิสอัตโนมัติ)" : "🔴 ปิด", inline: true },
                     { name: "🚨 Anti-Raid", value: s.antiRaid ? "🟢 เปิด" : "🔴 ปิด", inline: true },
                     { name: "💬 Anti-Spam (สมาชิก)", value: s.antiSpam ? "🟢 เปิด" : "🔴 ปิด", inline: true },
                     { name: "🪝 Anti-Webhook Spam", value: s.antiWebhookSpam ? "🟢 เปิดใช้งาน (Active)" : "🔴 ปิด", inline: true },
@@ -1175,6 +1184,23 @@ client.on("interactionCreate", async interaction => {
                     enabled
                         ? `🟢 เปิดระบบแบนคนแท็ก @everyone สำหรับ **${interaction.guild.name}** แล้ว\n\n🛡️ *ผู้ใดก็ตามที่แท็ก @everyone จะถูกลบข้อความและแบนออกจากเซิร์ฟเวอร์ทันที (ยกเว้นหัวดิสเท่านั้น)*`
                         : `🔴 ปิดระบบแบนคนแท็ก @everyone เรียบร้อยแล้ว`
+                )
+                .setTimestamp();
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (sub === "antilink") {
+            const enabled = interaction.options.getBoolean("enabled", true);
+            s.antiDiscordLink = enabled;
+            saveConfig(config);
+
+            const embed = new EmbedBuilder()
+                .setTitle("✅ บันทึกการตั้งค่า Anti-Discord Link สำเร็จ")
+                .setColor(enabled ? 0x57F287 : 0xED4245)
+                .setDescription(
+                    enabled
+                        ? `🟢 เปิดระบบป้องกันส่งลิงก์ Discord สำหรับ **${interaction.guild.name}** แล้ว\n\n🛡️ *เมื่อสมาชิกส่งลิงก์คำเชิญ Discord บอทจะลบข้อความอัตโนมัติและแจ้งเตือนทันที*`
+                        : `🔴 ปิดระบบป้องกันส่งลิงก์ Discord เรียบร้อยแล้ว`
                 )
                 .setTimestamp();
             return interaction.reply({ embeds: [embed], ephemeral: true });

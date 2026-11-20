@@ -1,4 +1,4 @@
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
+const { EmbedBuilder, PermissionsBitField, AuditLogEvent } = require("discord.js");
 
 const joinWindows = new Map();
 const messageWindows = new Map();
@@ -9,6 +9,40 @@ const webhookWindows = new Map();
 const recentWebhookMessages = new Map();
 const terminatingWebhooks = new Set();
 
+// Cache recent messages in memory to preserve author & content even if Discord purges the message from cache or fires partial
+const messageCache = new Map();
+function cacheMessage(msg) {
+    if (!msg || !msg.id) return;
+    messageCache.set(msg.id, {
+        authorId: msg.author?.id,
+        authorTag: msg.author?.tag,
+        content: msg.content,
+        channelId: msg.channel?.id,
+        createdAt: msg.createdAt,
+        guildId: msg.guild?.id
+    });
+    if (messageCache.size > 3000) {
+        const firstKey = messageCache.keys().next().value;
+        messageCache.delete(firstKey);
+    }
+}
+
+// Track messages deleted by the bot so we know who deleted it (Bot) and the exact reason
+const botDeletedMessages = new Map();
+function trackBotDelete(messageId, reason, extra = {}) {
+    botDeletedMessages.set(messageId, {
+        reason,
+        timestamp: Date.now(),
+        ...extra
+    });
+    setTimeout(() => {
+        botDeletedMessages.delete(messageId);
+    }, 120000);
+}
+
+// Regex to detect Discord server invites (discord.gg, discord.com/invite, discordapp.com/invite, dsc.gg, discord.me, etc.)
+const DISCORD_INVITE_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:discord\.(?:gg|io|me|li|link)|discord(?:app)?\.com\/invite|dsc\.gg|invite\.gg)\/([a-zA-Z0-9_\-]+)/gi;
+
 function settingsFor(config, guildId) {
     config[guildId] ??= {};
     const defaultLogChannel = guildId === "1550132569432137903" ? "1563869910474428449" : null;
@@ -18,6 +52,7 @@ function settingsFor(config, guildId) {
         antiSpam: true,
         antiWebhookSpam: true,
         antiEveryoneBan: true,
+        antiDiscordLink: true,
         webhookSpamLimit: 3,
         webhookWindowSeconds: 5,
         autoDeleteSpamWebhook: true,
@@ -36,6 +71,7 @@ function settingsFor(config, guildId) {
     const sec = config[guildId].security;
     sec.antiWebhookSpam ??= true;
     sec.antiEveryoneBan ??= true;
+    sec.antiDiscordLink ??= true;
     sec.webhookSpamLimit ??= 3;
     sec.webhookWindowSeconds ??= 5;
     sec.autoDeleteSpamWebhook ??= true;
@@ -97,6 +133,7 @@ function startSecurity(client, config, saveConfig) {
 
         // 1. กรณีเป็น Webhook แท็ก @everyone
         if (message.webhookId) {
+            trackBotDelete(message.id, "🚨 ระบบลบอัตโนมัติ: Webhook แท็ก @everyone (Anti-Everyone Guard)");
             await message.delete().catch(() => null);
             let webhookObj = null;
             try {
@@ -123,6 +160,7 @@ function startSecurity(client, config, saveConfig) {
         }
 
         // 2. กรณีเป็นสมาชิกทั่วไป / บอทอื่น / แอดมิน ที่ไม่ใช่หัวดิส -> ลบข้อความ + แบนถาวรทันที
+        trackBotDelete(message.id, "🔨 ระบบลบอัตโนมัติ: สมาชิกแท็ก @everyone (Anti-Everyone Guard)");
         await message.delete().catch(() => null);
 
         // ส่งข้อความแจ้งเตือนทาง DM ก่อนทำการแบน
@@ -190,6 +228,96 @@ function startSecurity(client, config, saveConfig) {
         return true;
     }
 
+    async function handleAntiDiscordLink(message, isEdit = false) {
+        if (!message || !message.guild || !message.author) return false;
+        if (message.author.id === client.user?.id) return false;
+
+        const s = settingsFor(config, message.guild.id);
+        if (!s.enabled || s.antiDiscordLink === false) return false;
+
+        // หากตั้งค่าให้ยกเว้นทีมงาน (ค่าเริ่มต้นไม่ยกเว้น เพื่อป้องกันการแอบส่งหรือโดนแฮกไอดี/ทดสอบระบบ)
+        if (s.exemptStaff) {
+            let isOwner = message.guild.ownerId === message.author.id;
+            if (!isOwner && message.guild.fetch) {
+                try {
+                    const fetched = await message.guild.fetch().catch(() => null);
+                    isOwner = fetched?.ownerId === message.author.id;
+                } catch {}
+            }
+            if (isOwner) return false;
+
+            if (message.member?.permissions) {
+                if (
+                    message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+                    message.member.permissions.has(PermissionsBitField.Flags.ManageMessages) ||
+                    message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)
+                ) {
+                    return false;
+                }
+            }
+        }
+
+        const rawContent = String(message.content || "");
+        if (!rawContent) return false;
+
+        // ล้างอักขระพิเศษ / zero-width characters ที่อาจใช้หลบเลี่ยงการตรวจจับ
+        const cleanContent = rawContent.replace(/[\u200B-\u200D\uFEFF]/g, "");
+
+        DISCORD_INVITE_REGEX.lastIndex = 0;
+        const matches = [...cleanContent.matchAll(DISCORD_INVITE_REGEX)];
+        if (!matches || matches.length === 0) return false;
+
+        // ดึง Vanity URL และ Invites ของเซิร์ฟเวอร์ตนเอง เพื่ออนุญาตให้แชร์ลิงก์ของเซิร์ฟเวอร์นี้ได้
+        const guildVanity = message.guild.vanityURLCode?.toLowerCase();
+        const guildInviteCodes = new Set();
+        if (guildVanity) guildInviteCodes.add(guildVanity);
+
+        try {
+            if (message.guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+                const invites = await message.guild.invites.fetch().catch(() => null);
+                if (invites) {
+                    for (const inv of invites.values()) {
+                        if (inv.code) guildInviteCodes.add(inv.code.toLowerCase());
+                    }
+                }
+            }
+        } catch {}
+
+        // คัดกรองเฉพาะลิงก์ที่เป็น Discord คำเชิญภายนอก (ไม่ใช่ของเซิร์ฟเวอร์นี้)
+        const externalMatches = matches.filter(m => {
+            const code = (m[1] || "").toLowerCase();
+            return !guildInviteCodes.has(code);
+        });
+
+        if (externalMatches.length === 0) return false;
+
+        const detectedLinks = externalMatches.map(m => m[0]);
+
+        // บันทึกการลบโดยบอท เพื่อให้ event messageDelete สามารถระบุผู้ลบและเหตุผลได้อย่างแม่นยำ
+        trackBotDelete(message.id, "🛡️ ระบบลบอัตโนมัติ: ป้องกันการส่งลิงก์ Discord (Anti-Discord Link)", {
+            detectedLinks,
+            targetId: message.author.id,
+            targetTag: message.author.tag
+        });
+
+        // ลบข้อความที่มีลิงก์ดิสทันที
+        await message.delete().catch(() => null);
+
+        // ส่งข้อความเตือนในห้องชั่วคราว (ลบตัวเองใน 6 วินาที)
+        try {
+            const warnEmbed = new EmbedBuilder()
+                .setColor(0xED4245)
+                .setTitle("🛡️ Kraken Security • Anti-Discord Link")
+                .setDescription(`⚠️ <@${message.author.id}> **ไม่อนุญาตให้ส่งลิงก์ Discord / คำเชิญเซิร์ฟเวอร์อื่นในห้องนี้!**\n*(ระบบได้ทำการลบข้อความของคุณเรียบร้อยแล้ว)*`)
+                .setTimestamp();
+
+            const warnNotice = await message.channel.send({ embeds: [warnEmbed] }).catch(() => null);
+            if (warnNotice) setTimeout(() => warnNotice.delete().catch(() => null), 6000);
+        } catch {}
+
+        return true;
+    }
+
     client.on("guildMemberAdd", async member => {
         const s = settingsFor(config, member.guild.id);
         if (!s.enabled || !s.antiRaid) return;
@@ -212,9 +340,16 @@ function startSecurity(client, config, saveConfig) {
     client.on("messageCreate", async message => {
         if (!message.guild) return;
 
+        // บันทึกข้อความลงแคชชั่วคราว เพื่อให้ระบุผู้ส่งและเนื้อหาได้แม้ Discord จะไม่แคชตอนถูกลบ
+        cacheMessage(message);
+
         // 0. ANTI-EVERYONE TAG BAN (สงวนสิทธิ์เฉพาะหัวดิสเท่านั้น)
         const everyoneBlocked = await handleAntiEveryone(message, false);
         if (everyoneBlocked) return;
+
+        // 0.5. ANTI-DISCORD LINK (ระบบป้องกันส่งลิงก์ดิส & บอทลบอัตโนมัติ)
+        const linkBlocked = await handleAntiDiscordLink(message, false);
+        if (linkBlocked) return;
 
         // 1. WEBHOOK ANTI-SPAM
         if (message.webhookId) {
@@ -249,6 +384,7 @@ function startSecurity(client, config, saveConfig) {
                 terminatingWebhooks.add(webhookId);
                 setTimeout(() => terminatingWebhooks.delete(webhookId), 30000);
 
+                trackBotDelete(message.id, "🚨 ระบบลบอัตโนมัติ: Webhook Spam (Rate Limit / Duplicate)");
                 await message.delete().catch(() => null);
 
                 let actionTaken = "ลบข้อความสแปมเรียบร้อย";
@@ -307,6 +443,7 @@ function startSecurity(client, config, saveConfig) {
         const duplicate = normalized.length >= 4 && now - dup < 15000;
         if (arr.length < Math.max(3, Number(s.spamMessageLimit) || 5) && !duplicate) return;
 
+        trackBotDelete(message.id, "⚠️ ระบบลบอัตโนมัติ: ส่งข้อความสแปมรัวผิดปกติ (Anti-Spam)");
         await message.delete().catch(() => null);
         if (message.member.moderatable) {
             const seconds = Math.min(3600, Math.max(10, Number(s.spamTimeoutSeconds) || 60));
@@ -347,10 +484,134 @@ function startSecurity(client, config, saveConfig) {
     });
 
     client.on("messageDelete", async message => {
-        if (!message.guild || message.author?.bot) return;
-        await log(message.guild, config, "🗑️ มีข้อความถูกลบ", "ข้อความจาก " + (message.author?.tag || "ไม่ทราบผู้ใช้"), 0xED4245, [
-            { name: "ห้อง", value: "<#" + message.channel.id + ">", inline: true },
-            { name: "เนื้อหา", value: String(message.content || "[ไม่มีเนื้อหา/ไม่อยู่ในแคช]").slice(0, 900), inline: false }
+        if (!message.guild) return;
+
+        // ดึงข้อมูลจากแคชในกรณีที่ข้อความเป็น Partial หรือ Discord ไม่ได้แคชไว้
+        const cached = messageCache.get(message.id);
+        const authorId = message.author?.id || cached?.authorId;
+        const authorTag = message.author?.tag || cached?.authorTag || "ไม่ทราบผู้ใช้";
+        const content = message.content || cached?.content || "[ไม่มีเนื้อหา/ไม่อยู่ในแคช]";
+        const isAuthorBot = message.author ? message.author.bot : false;
+
+        // ถ้าข้อความที่ลบเป็นของบอทเอง และไม่ได้อยู่ในรายการที่ระบบความปลอดภัยสั่งลบ ให้ข้ามเพื่อไม่ให้ Log ล้น
+        if (isAuthorBot && !botDeletedMessages.has(message.id)) return;
+
+        let deletedByText = "❓ ไม่สามารถระบุได้";
+        let deleteReason = null;
+        let detectedLinks = null;
+
+        // 1. ตรวจสอบว่าระบบความปลอดภัยของบอทเองเป็นผู้สั่งลบข้อความนี้หรือไม่
+        if (botDeletedMessages.has(message.id)) {
+            const info = botDeletedMessages.get(message.id);
+            botDeletedMessages.delete(message.id);
+            deletedByText = `🤖 <@${client.user.id}> (${client.user.username})`;
+            if (info.reason) deleteReason = info.reason;
+            if (info.detectedLinks) detectedLinks = info.detectedLinks;
+        } else {
+            // 2. หน่วงเวลา 600ms เพื่อรอให้ Audit Log ของ Discord ซิงค์ข้อมูลผู้สั่งลบ
+            await new Promise(r => setTimeout(r, 600));
+
+            try {
+                if (message.guild.members.me?.permissions.has(PermissionsBitField.Flags.ViewAuditLog)) {
+                    const auditLogs = await message.guild.fetchAuditLogs({
+                        type: AuditLogEvent.MessageDelete,
+                        limit: 3
+                    }).catch(() => null);
+
+                    const entry = auditLogs?.entries.find(e => {
+                        const isTarget = !authorId || e.target?.id === authorId;
+                        const isChannel = !message.channel || e.extra?.channel?.id === message.channel.id;
+                        const isRecent = (Date.now() - e.createdTimestamp) < 10000;
+                        return isTarget && isChannel && isRecent;
+                    });
+
+                    if (entry && entry.executor) {
+                        if (entry.executor.id === client.user.id) {
+                            deletedByText = `🤖 <@${entry.executor.id}> (${entry.executor.tag || "บอท"})`;
+                        } else {
+                            deletedByText = `🛡️ <@${entry.executor.id}> (${entry.executor.tag || entry.executor.username})`;
+                        }
+                        if (entry.reason) deleteReason = entry.reason;
+                    } else {
+                        // ใน Discord หากเจ้าของข้อความลบข้อความของตนเอง Discord จะไม่สร้าง Audit Log เด็ดขาด
+                        if (authorId) {
+                            deletedByText = `👤 <@${authorId}> (เจ้าของข้อความลบเอง)`;
+                        } else {
+                            deletedByText = `👤 เจ้าของข้อความลบเอง หรือ ตรวจสอบไม่ได้`;
+                        }
+                    }
+                } else {
+                    if (authorId) {
+                        deletedByText = `👤 <@${authorId}> (เจ้าของข้อความลบเอง / บอทขาดสิทธิ์ View Audit Log)`;
+                    } else {
+                        deletedByText = `❓ ไม่ทราบ (ต้องการสิทธิ์ View Audit Log)`;
+                    }
+                }
+            } catch (err) {
+                console.log("[MESSAGE DELETE AUDIT ERROR]", err.message);
+                if (authorId) {
+                    deletedByText = `👤 <@${authorId}> (เจ้าของข้อความลบเอง)`;
+                }
+            }
+        }
+
+        const fields = [
+            { name: "ห้อง", value: `<#${message.channel.id}>`, inline: true }
+        ];
+
+        if (authorId) {
+            fields.push({ name: "เจ้าของข้อความ", value: `<@${authorId}> (${authorTag})`, inline: true });
+        }
+
+        fields.push({ name: "ผู้ลบข้อความ", value: deletedByText, inline: true });
+
+        if (deleteReason) {
+            fields.push({ name: "สาเหตุ / การดำเนินการ", value: String(deleteReason), inline: false });
+        }
+
+        if (detectedLinks && detectedLinks.length > 0) {
+            fields.push({ name: "🔗 ลิงก์ที่ตรวจพบ", value: detectedLinks.join("\n").slice(0, 500), inline: false });
+        }
+
+        fields.push({
+            name: "เนื้อหา",
+            value: String(content).slice(0, 900) || "[ไม่มีเนื้อหา]",
+            inline: false
+        });
+
+        await log(
+            message.guild,
+            config,
+            "🗑️ มีข้อความถูกลบ",
+            `ข้อความจาก ${authorTag}`,
+            0xED4245,
+            fields
+        );
+    });
+
+    client.on("messageDeleteBulk", async messages => {
+        const first = messages.first();
+        if (!first || !first.guild) return;
+
+        await new Promise(r => setTimeout(r, 600));
+        let deleterText = "❓ ไม่สามารถระบุได้";
+        try {
+            if (first.guild.members.me?.permissions.has(PermissionsBitField.Flags.ViewAuditLog)) {
+                const auditLogs = await first.guild.fetchAuditLogs({
+                    type: AuditLogEvent.MessageBulkDelete,
+                    limit: 1
+                }).catch(() => null);
+                const entry = auditLogs?.entries.first();
+                if (entry && (Date.now() - entry.createdTimestamp < 10000)) {
+                    deleterText = `🛡️ <@${entry.executor.id}> (${entry.executor.tag || entry.executor.username})`;
+                }
+            }
+        } catch {}
+
+        await log(first.guild, config, "🗑️ มีการลบข้อความจำนวนมาก (Bulk Delete)", `มีการลบข้อความทั้งหมด ${messages.size} ข้อความพร้อมกัน`, 0xED4245, [
+            { name: "ห้อง", value: `<#${first.channel.id}>`, inline: true },
+            { name: "ผู้ลบข้อความ", value: deleterText, inline: true },
+            { name: "จำนวนข้อความ", value: `${messages.size} ข้อความ`, inline: true }
         ]);
     });
 
@@ -360,19 +621,26 @@ function startSecurity(client, config, saveConfig) {
             try { after = await after.fetch(); } catch {}
         }
 
+        // แคชข้อความที่แก้ไข
+        cacheMessage(after);
+
         // 0. ANTI-EVERYONE TAG BAN ON EDIT (ป้องกันการแก้ไขข้อความเพื่อแท็ก @everyone)
         const everyoneBlocked = await handleAntiEveryone(after, true);
         if (everyoneBlocked) return;
 
+        // 0.5. ANTI-DISCORD LINK ON EDIT (ลบข้อความแก้ไขที่มีลิงก์ Discord อัตโนมัติ)
+        const linkBlocked = await handleAntiDiscordLink(after, true);
+        if (linkBlocked) return;
+
         if (after.author?.bot || before?.content === after?.content) return;
         await sendLog(after.guild, config, "✏️ มีการแก้ไขข้อความ", "สมาชิก " + (after.author?.tag || "ไม่ทราบผู้ใช้"), 0xFEE75C, [
             { name: "ห้อง", value: "<#" + after.channel.id + ">", inline: true },
-            { name: "ก่อนแก้ไข", value: String(before.content || "[ไม่มีเนื้อหา]").slice(0, 700), inline: false },
+            { name: "ก่อนแก้ไข", value: String(before?.content || "[ไม่มีเนื้อหา]").slice(0, 700), inline: false },
             { name: "หลังแก้ไข", value: String(after.content || "[ไม่มีเนื้อหา]").slice(0, 700), inline: false }
         ]);
     });
 
-    console.log("[SECURITY] Anti-Raid / Anti-Spam / audit logs loaded");
+    console.log("[SECURITY] Anti-Raid / Anti-Spam / Anti-Discord-Link / audit logs loaded");
 }
 
 async function moderate(interaction, action) {
